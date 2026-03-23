@@ -181,17 +181,16 @@ function _terrainRaw(x,z){
   h+=Math.sin(x*s*180+2.8)*Math.cos(z*s*155+0.9)*0.9; // micro-détail
   h+=Math.cos(x*s*320+1.5)*Math.sin(z*s*280+3.2)*0.4; // ultra-fin
 
-  // Crêtes rocheuses (ridgelines) — abs(noise) crée des arêtes vives
+  // Crêtes rocheuses (ridgelines) — abs(noise) crée des arêtes douces
   const ridge=Math.abs(Math.sin(x*s*4.5+0.8)*Math.cos(z*s*3.8+2.1));
-  h+=ridge*ridge*45; // crêtes pointues dans les zones élevées
+  h+=ridge*ridge*18; // crêtes modérées (pas trop agressif)
 
   // Fonction de transfert : élever les hauts, aplatir les bas
   // crée des plaines côtières plates + montagnes escarpées
   if(h<0)       h*=0.22;      // zones océaniques plus profondes
   else if(h<60) h*=0.28;      // plaines côtières très plates
   else if(h<140) h=16.8+(h-60)*0.85; // transition douce
-  else if(h<300) h=84+(h-140)*1.35;  // montagnes amplifiées
-  else           h=300+(h-300)*1.60;  // pics extrêmes encore plus hauts
+  else           h=84+(h-140)*1.35;  // montagnes amplifiées
 
   return h;
 }
@@ -224,7 +223,7 @@ function getCam(){
     return {
       cx: pl.x - sinY*behind*cosPi,
       cy: pl.y - cosY*behind*cosPi,
-      cz: pl.z + above - sinY*behind*Math.sin(pl.pitch),
+      cz: pl.z + above + Math.sin(pl.pitch)*behind,
       cyaw:pl.yaw, cpitch:0, croll:0  // caméra fixe horizontale
     };
   } else {
@@ -1288,7 +1287,7 @@ function drawCessna(){
 
   // Fonction utilitaire : ajouter des points locaux avion → visible[]
   function pushFace(col, pts, alpha){
-    const ppts=[], valid=true;
+    const ppts=[];
     let sumD=0;
     for(const p of pts){
       const pr=projP(...p);
@@ -1356,11 +1355,13 @@ function drawCessna(){
   // ── Tri unique back→front → painter's correct pour TOUT ──
   visible.sort((a,b)=>b.d-a.d);
   visible.forEach(({col,ppts,alpha})=>{
+    if(alpha!==undefined) ctx.globalAlpha=alpha;
     ctx.beginPath();
     ctx.moveTo(ppts[0].sx,ppts[0].sy);
     for(let i=1;i<ppts.length;i++) ctx.lineTo(ppts[i].sx,ppts[i].sy);
     ctx.closePath();
     ctx.fillStyle=col; ctx.fill();
+    if(alpha!==undefined) ctx.globalAlpha=1;
   });
 
   // ── NAVIGATION LIGHTS (glow effect) ──
@@ -1817,6 +1818,7 @@ function drawTrees(T){
       const base=project(twx,twy,th);
       const top=project(twx,twy,th+treeH);
       if(!base||!top) continue;
+      if(base.d<8||base.d>TREE_RANGE) continue; // trop proche = artefacts
 
       trees.push({twx,twy,th,treeH,treeW,trunkH,isConifer,base,top,d:base.d});
     }
@@ -1984,23 +1986,27 @@ function drawBox3D(bx,by,bz,bw,bd,bh, cx,cy,px,py, fogF, colTop,colSide,colFront
   const pc=corners.map(c=>project(...c));
   function face(col,i0,i1,i2,i3){
     const p0=pc[i0],p1=pc[i1],p2=pc[i2],p3=pc[i3];
-    if(!p0||!p1||!p2||!p3) return;
-    ctx.fillStyle=fogCol(col);
+    if(!p0||!p1||!p2||!p3) return null;
+    const avgD=(p0.d+p1.d+p2.d+p3.d)/4;
+    return {col,p0,p1,p2,p3,d:avgD};
+  }
+  // Collecter toutes les faces visibles
+  const faces=[
+    face(colTop,4,5,6,7),
+    face(colFront,0,1,5,4),
+    face(colFront,3,7,6,2),
+    face(colSide,0,4,7,3),
+    face(colSide,1,2,6,5),
+  ].filter(f=>f!==null);
+  // Trier back-to-front pour painter's algorithm correct
+  faces.sort((a,b)=>b.d-a.d);
+  for(const f of faces){
+    ctx.fillStyle=fogCol(f.col);
     ctx.beginPath();
-    ctx.moveTo(p0.sx,p0.sy); ctx.lineTo(p1.sx,p1.sy);
-    ctx.lineTo(p2.sx,p2.sy); ctx.lineTo(p3.sx,p3.sy);
+    ctx.moveTo(f.p0.sx,f.p0.sy); ctx.lineTo(f.p1.sx,f.p1.sy);
+    ctx.lineTo(f.p2.sx,f.p2.sy); ctx.lineTo(f.p3.sx,f.p3.sy);
     ctx.closePath(); ctx.fill();
   }
-  // Top
-  face(colTop,4,5,6,7);
-  // Front (near)
-  face(colFront,0,1,5,4);
-  // Back (far)
-  face(colFront,3,7,6,2);
-  // Left
-  face(colSide,0,4,7,3);
-  // Right
-  face(colSide,1,2,6,5);
 }
 
 // ══ RIVIÈRES PROCÉDURALES ════════════════════════════════
@@ -2043,12 +2049,15 @@ function drawRivers(){
       const perpX=-Math.cos(dir)*riv.width, perpY=Math.sin(dir)*riv.width;
 
       const fogF=Math.pow(Math.min(1,Math.sqrt(d2)/RIVER_RANGE),0.6);
-      const wz=Math.max(h-1.5, 0.5);
+      // Rivière posée SUR le terrain (+0.3 pour éviter le z-fighting)
+      const wz=h+0.3;
+      const nh=terrainH(nx,ny);
+      const nwz=nh+0.3;
 
       const p1=project(rx+perpX,ry+perpY,wz);
       const p2=project(rx-perpX,ry-perpY,wz);
-      const p3=project(nx-perpX,ny-perpY,wz);
-      const p4=project(nx+perpX,ny+perpY,wz);
+      const p3=project(nx-perpX,ny-perpY,nwz);
+      const p4=project(nx+perpX,ny+perpY,nwz);
 
       if(p1&&p2&&p3&&p4){
         const wr=Math.round(lerp(28,FOG_R,fogF));
@@ -2302,7 +2311,6 @@ function loop(ts){
   ctx.clearRect(0,0,W,H);
   const T=ts*.001;
   drawSky();
-  drawOceanScreen(T);   // eau plein écran (fond océan avant terrain)
   drawClouds();         // nuages avant terrain : montagne proche couvre nuage lointain
   drawTerrain(T);
   drawRivers();         // rivières sur le terrain
