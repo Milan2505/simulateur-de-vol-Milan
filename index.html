@@ -253,22 +253,15 @@ function project(wx,wy,wz){
   const FOV=Math.min(W,H)*0.72;
   return { sx:W/2+fx/fy*FOV, sy:H/2-fz/fy*FOV, d:fy };
 }
-// Interpolation near-plane : quand un sommet est derrière la caméra,
-// on interpole vers un sommet visible pour trouver le point sur le near plane.
-function clipEdge(wxA,wyA,wzA, wxB,wyB,wzB){
-  // A est derrière, B est devant → interpole A vers B
-  const pB=project(wxB,wyB,wzB);
-  if(!pB) return null;
-  // Recherche binaire rapide du point sur le near plane (4 itérations)
-  let t0=0, t1=1;
-  for(let i=0;i<4;i++){
-    const tm=(t0+t1)/2;
-    const mx=wxA+(wxB-wxA)*tm, my=wyA+(wyB-wyA)*tm, mz=wzA+(wzB-wzA)*tm;
-    const p=project(mx,my,mz);
-    if(p) t1=tm; else t0=tm;
+// Near-plane clipping : interpole A (derrière) vers B (visible) via recherche binaire
+function clipEdge(axw,ayw,azw,bxw,byw,bzw){
+  if(!project(bxw,byw,bzw)) return null;
+  let t0=0,t1=1;
+  for(let i=0;i<5;i++){
+    const t=(t0+t1)/2;
+    if(project(axw+(bxw-axw)*t,ayw+(byw-ayw)*t,azw+(bzw-azw)*t)) t1=t; else t0=t;
   }
-  const t=t1;
-  return project(wxA+(wxB-wxA)*t, wyA+(wyB-wyA)*t, wzA+(wzB-wzA)*t);
+  return project(axw+(bxw-axw)*t1,ayw+(byw-ayw)*t1,azw+(bzw-azw)*t1);
 }
 
 // ══ SOLEIL FIXE DANS LE MONDE ══════════════════════
@@ -468,7 +461,7 @@ function drawTerrain(T){
         const cdx=wx0+step*.5-pl.x, cdy=wy0+step*.5-pl.y;
         const d2=cdx*cdx+cdy*cdy;
         if(d2>maxD2) continue;
-        if(cdx*fX+cdy*fY < -step*5) continue; // frustum (marge large pour éviter les trous)
+        if(cdx*fX+cdy*fY < -step*5) continue; // frustum
 
         const A={wx:wx0,wy:wy0,wz:terrainH(wx0,wy0)};
         const B={wx:wx1,wy:wy0,wz:terrainH(wx1,wy0)};
@@ -587,31 +580,25 @@ function drawOceanScreen(T){
 }
 
 function drawTriangle(A,B,C,T,FAR){
-  if((A.wz<1)&&(B.wz<1)&&(C.wz<1)) return; // eau pure gérée par le ring
+  if((A.wz<1)&&(B.wz<1)&&(C.wz<1)) return;
   if(!isFinite(A.wz)||!isFinite(B.wz)||!isFinite(C.wz)) return;
 
-  // Coordonnées monde effectives (eau → z=0)
-  const awx=A.wx, awy=A.wy, awz=A.wz<1?0:A.wz;
-  const bwx=B.wx, bwy=B.wy, bwz=B.wz<1?0:B.wz;
-  const cwx=C.wx, cwy=C.wy, cwz=C.wz<1?0:C.wz;
-
-  // Projection avec clipping near-plane
-  let pA = A.wz<1 ? project(A.wx,A.wy,0) : A.pr;
-  let pB = B.wz<1 ? project(B.wx,B.wy,0) : B.pr;
-  let pC = C.wz<1 ? project(C.wx,C.wy,0) : C.pr;
-  const nA=!pA, nB=!pB, nC=!pC;
-  const nullCount=nA+nB+nC;
-  if(nullCount===3) return; // tout derrière
-  // Clipping : interpoler les sommets derrière vers les sommets visibles
-  if(nullCount===1){
-    if(nA){ pA=clipEdge(awx,awy,awz, bwx,bwy,bwz); if(!pA) pA=clipEdge(awx,awy,awz, cwx,cwy,cwz); }
-    if(nB){ pB=clipEdge(bwx,bwy,bwz, awx,awy,awz); if(!pB) pB=clipEdge(bwx,bwy,bwz, cwx,cwy,cwz); }
-    if(nC){ pC=clipEdge(cwx,cwy,cwz, awx,awy,awz); if(!pC) pC=clipEdge(cwx,cwy,cwz, bwx,bwy,bwz); }
-  } else if(nullCount===2){
-    // 2 sommets derrière : clipper chacun vers le seul visible
-    if(!nA){ if(nB) pB=clipEdge(bwx,bwy,bwz, awx,awy,awz); if(nC) pC=clipEdge(cwx,cwy,cwz, awx,awy,awz); }
-    if(!nB){ if(nA) pA=clipEdge(awx,awy,awz, bwx,bwy,bwz); if(nC) pC=clipEdge(cwx,cwy,cwz, bwx,bwy,bwz); }
-    if(!nC){ if(nA) pA=clipEdge(awx,awy,awz, cwx,cwy,cwz); if(nB) pB=clipEdge(bwx,bwy,bwz, cwx,cwy,cwz); }
+  const awx=A.wx,awy=A.wy,awz=A.wz<1?0:A.wz;
+  const bwx=B.wx,bwy=B.wy,bwz=B.wz<1?0:B.wz;
+  const cwx=C.wx,cwy=C.wy,cwz=C.wz<1?0:C.wz;
+  let pA=A.wz<1?project(A.wx,A.wy,0):A.pr;
+  let pB=B.wz<1?project(B.wx,B.wy,0):B.pr;
+  let pC=C.wz<1?project(C.wx,C.wy,0):C.pr;
+  const nA=!pA,nB=!pB,nC=!pC,nn=nA+nB+nC;
+  if(nn===3) return;
+  if(nn===1){
+    if(nA){pA=clipEdge(awx,awy,awz,bwx,bwy,bwz)||clipEdge(awx,awy,awz,cwx,cwy,cwz);}
+    if(nB){pB=clipEdge(bwx,bwy,bwz,awx,awy,awz)||clipEdge(bwx,bwy,bwz,cwx,cwy,cwz);}
+    if(nC){pC=clipEdge(cwx,cwy,cwz,awx,awy,awz)||clipEdge(cwx,cwy,cwz,bwx,bwy,bwz);}
+  } else if(nn===2){
+    if(!nA){if(nB)pB=clipEdge(bwx,bwy,bwz,awx,awy,awz);if(nC)pC=clipEdge(cwx,cwy,cwz,awx,awy,awz);}
+    if(!nB){if(nA)pA=clipEdge(awx,awy,awz,bwx,bwy,bwz);if(nC)pC=clipEdge(cwx,cwy,cwz,bwx,bwy,bwz);}
+    if(!nC){if(nA)pA=clipEdge(awx,awy,awz,cwx,cwy,cwz);if(nB)pB=clipEdge(bwx,bwy,bwz,cwx,cwy,cwz);}
   }
   if(!pA||!pB||!pC) return;
   const dist=pA.d;
@@ -969,263 +956,241 @@ const CESSNA_MESH=(()=>{
   }
 
   // ══════════════════════════════════════════
-  // CAPOT MOTEUR — sections elliptiques, 12 faces
+  // CAPOT MOTEUR — y: 13.5 → 19.8
+  // Section circulaire, 8 faces longitudinales
+  // Centré à z≈-2.1 (plus bas que le fuselage cabine)
   // ══════════════════════════════════════════
   {
-    const S=[
-      [13.5, 1.22, 1.30, 0.35],
-      [14.8, 1.28, 1.38, 0.32],
-      [16.2, 1.24, 1.34, 0.28],
-      [17.8, 1.08, 1.18, 0.22],
-      [19.2, 0.72, 0.75, 0.15]
-    ];
-    const N=12;
+    // 4 stations : [y, rx, rz, cz]
+    const S=[[13.5,1.22,1.30,-2.05],[15.2,1.28,1.38,-2.10],[17.2,1.12,1.22,-2.06],[19.2,0.75,0.78,-2.03]];
+    const cols=[MT,MT2,MT2,MT2,MT2,MT2,MT2,MT2];
     for(let s=0;s<S.length-1;s++){
       const [ya,rxa,rza,cza]=S[s],[yb,rxb,rzb,czb]=S[s+1];
+      const N=8;
       for(let i=0;i<N;i++){
-        const a0=i/N*Math.PI*2,a1=(i+1)/N*Math.PI*2;
-        const col=Math.cos(a0)>0.3?MT:MT2;
-        quad(col,
-          [Math.sin(a0)*rxa, ya, cza+Math.cos(a0)*rza],
-          [Math.sin(a1)*rxa, ya, cza+Math.cos(a1)*rza],
-          [Math.sin(a1)*rxb, yb, czb+Math.cos(a1)*rzb],
-          [Math.sin(a0)*rxb, yb, czb+Math.cos(a0)*rzb]);
+        const a0=i/N*Math.PI*2-Math.PI/2,a1=(i+1)/N*Math.PI*2-Math.PI/2;
+        const A=[Math.cos(a0)*rxa, ya, cza+Math.sin(a0)*rza];
+        const B=[Math.cos(a1)*rxa, ya, cza+Math.sin(a1)*rza];
+        const C=[Math.cos(a1)*rxb, yb, czb+Math.sin(a1)*rzb];
+        const D=[Math.cos(a0)*rxb, yb, czb+Math.sin(a0)*rzb];
+        quad(cols[i],A,B,C,D);
       }
     }
-    const [yf,rxf,rzf,czf]=S[S.length-1];
+    // Fermeture avant
+    const [yf,rxf,rzf,czf]=S[3], N=8;
     for(let i=0;i<N;i++){
-      const a0=i/N*Math.PI*2,a1=(i+1)/N*Math.PI*2;
-      tri(MT2,[0,20.0,czf],
-        [Math.sin(a0)*rxf,yf,czf+Math.cos(a0)*rzf],
-        [Math.sin(a1)*rxf,yf,czf+Math.cos(a1)*rzf]);
+      const a0=i/N*Math.PI*2-Math.PI/2,a1=(i+1)/N*Math.PI*2-Math.PI/2;
+      tri(MT2,[0,19.8,czf],[Math.cos(a0)*rxf,yf,czf+Math.sin(a0)*rzf],[Math.cos(a1)*rxf,yf,czf+Math.sin(a1)*rzf]);
     }
   }
 
   // ══════════════════════════════════════════
-  // FUSELAGE — sections elliptiques arrondies
-  // Chaque station : [y, rx, cz, rz_top, rz_bot]
-  // rx=demi-largeur, cz=centre vertical, rz_top/rz_bot=rayons haut/bas
+  // FUSELAGE — géométrie EXPLICITE par faces
+  //
+  // Vue de côté : 4 arêtes longitudinales
+  //   TOP    :  z_top  (toit)
+  //   BOT    :  z_bot  (plancher)
+  //   La section est un hexagone approché :
+  //   6 points de section : top, top-R, R, bot-R, bot, L (miroir)
+  //
+  // Coordonnées des 4 arêtes sur les stations-clés :
+  //   Station    y     x    z_top  z_bot
+  //   Firewall  13.5  1.22   2.30  -1.52  ← cabine haute
+  //   CabMax     5.0  1.72   2.35  -1.55  ← cabine la plus large
+  //   CabEnd    -2.0  1.68   2.28  -1.50  ← fin cabine
+  //   StepBot   -3.5  1.02   1.62  -1.20  ← STEP
+  //   TailMid   -8.0  0.68   1.12  -0.82
+  //   TailEnd  -16.0  0.12   0.42  -0.62
+  //
+  // Les 6pts de section = top-L/top-R, shoulder-L/R, bot-L/bot-R
   // ══════════════════════════════════════════
-  const FS=[
-    [13.5, 1.22, 0.40, 1.90, 1.92],   // firewall
-    [ 9.0, 1.55, 0.42, 1.92, 1.96],   // transition
-    [ 5.0, 1.72, 0.40, 1.95, 1.95],   // cabine max
-    [ 1.0, 1.72, 0.38, 1.92, 1.92],   // cabine milieu
-    [-2.0, 1.68, 0.36, 1.90, 1.88],   // fin cabine
-    [-3.5, 1.02, 0.20, 1.42, 1.40],   // step
-    [-5.5, 0.82, 0.16, 1.20, 1.16],   // transition queue
-    [-8.0, 0.68, 0.14, 0.98, 0.96],   // queue
-    [-10.5,0.50, 0.12, 0.78, 0.78],   // queue mid
-    [-12.5,0.36, 0.08, 0.64, 0.63],   // queue fine
-    [-14.5,0.22, 0.04, 0.52, 0.50],   // queue narrow
-    [-16.0,0.12, 0.00, 0.42, 0.42],   // extrémité
-  ];
-  const NSEC=12; // points par demi-section
 
-  // Génère les points d'une section elliptique (côté droit, de haut en bas)
+  // Stations fuselage [y, xm, zt, zb, z_shoulder_off]
+  // z_shoulder_off : décalage vertical des épaules par rapport au mi-hauteur
+  const FS=[
+    [13.5, 1.22, 2.30,-1.52, 0.35],  // F0 firewall
+    [ 5.0, 1.72, 2.35,-1.55, 0.32],  // F1 cabine max
+    [-2.0, 1.68, 2.28,-1.50, 0.33],  // F2 fin cabine
+    [-3.5, 1.02, 1.62,-1.20, 0.42],  // F3 step
+    [-8.0, 0.68, 1.12,-0.82, 0.50],  // F4 queue
+    [-12.5,0.36, 0.72,-0.55, 0.60],  // F5 queue fine
+    [-16.0,0.12, 0.42,-0.42, 0.70],  // F6 extrémité
+  ];
+
+  // Pour chaque station, génère les 6 points [x,y,z] côté droit
   function fsPts(f){
-    const [y, rx, cz, rzt, rzb]=f;
-    const pts=[];
-    for(let i=0;i<=NSEC;i++){
-      const a=i/NSEC*Math.PI; // 0=top → PI=bottom
-      const cosA=Math.cos(a), sinA=Math.sin(a);
-      const rz=cosA>=0?rzt:rzb; // rayon haut ou bas
-      pts.push([sinA*rx, y, cz+cosA*rz]);
-    }
-    return pts; // NSEC+1 points
+    const [y,xm,zt,zb,so]=f;
+    const zMid=(zt+zb)/2, zH=(zt-zb)/2;
+    return [
+      [0,    y, zt],               // top-center
+      [xm*0.7, y, zt-zH*0.28],    // top-shoulder
+      [xm,   y, zMid+zH*so],       // shoulder haut
+      [xm,   y, zMid-zH*so],       // shoulder bas
+      [xm*0.7, y, zb+zH*0.22],    // bot-shoulder
+      [0,    y, zb],               // bot-center
+    ];
   }
 
   function mirrorX(p){ return [-p[0],p[1],p[2]]; }
 
-  // Connecte deux sections elliptiques
+  // Connecte deux stations (6pts chacune)
   function fusSegment(A,B, cTop,cSide,cBot){
-    const N=NSEC+1;
+    const N=6;
     // Côté droit
     for(let i=0;i<N-1;i++){
-      const t=i/(N-1); // 0=top, 1=bottom
-      const col=t<0.25?cTop:t<0.75?cSide:cBot;
+      const col=i<2?cTop:i<4?cSide:cBot;
       quad(col, A[i],A[i+1],B[i+1],B[i]);
     }
+    // Dessus (entre top-L et top-R)
+    quad(cTop, A[0],B[0],B[0],[mirrorX(B[0])[0],B[0][1],B[0][2]]);
+    // En fait dessus = quad entre top-L et top-R des deux stations
+    const AL=mirrorX(A[0]),BL=mirrorX(B[0]);
+    quad(cTop, AL,A[0],B[0],BL);
+    // Dessous
+    const A5L=mirrorX(A[5]),B5L=mirrorX(B[5]);
+    quad(cBot, A5L,B5L,B[5],A[5]);
     // Côté gauche (miroir)
     for(let i=0;i<N-1;i++){
-      const t=i/(N-1);
-      const col=t<0.25?cTop:t<0.75?cSide:cBot;
-      quad(col, mirrorX(A[i+1]),mirrorX(A[i]),mirrorX(B[i]),mirrorX(B[i+1]));
+      const col=i<2?cTop:i<4?cSide:cBot;
+      const pA=mirrorX(A[i]),pA1=mirrorX(A[i+1]),pB=mirrorX(B[i]),pB1=mirrorX(B[i+1]);
+      quad(col, pA1,pA,pB,pB1);
     }
   }
 
+  // Fuselage par segments
   const pts=FS.map(fsPts);
   const colsPerSeg=[
-    [W,W2,W3],[W,W2,W3],[W,W2,W3],[W,W2,W3],
-    [W2,W3,W3],[W2,W3,W3],[W2,W3,W3],
-    [W2,W3,W4],[W3,W3,W4],[W3,W3,W4],[W3,W3,W4],
+    [W, W2,W3],   // firewall→cabine
+    [W, W2,W3],   // cabine→fin cabine
+    [W2,W3,W3],   // step
+    [W2,W3,W3],   // queue
+    [W3,W3,W4],   // queue fine
+    [W3,W3,W4],   // extrémité
   ];
-  for(let i=0;i<pts.length-1;i++) fusSegment(pts[i],pts[i+1],...colsPerSeg[i]);
-
+  for(let i=0;i<pts.length-1;i++){
+    fusSegment(pts[i],pts[i+1],...colsPerSeg[i]);
+  }
   // Fermeture queue
   {
-    const p=pts[pts.length-1], pL=p.map(mirrorX);
-    const tp=[0,-16.5,0.00];
-    for(let i=0;i<p.length-1;i++) tri(W4,p[i+1],p[i],tp);
-    for(let i=0;i<pL.length-1;i++) tri(W4,pL[i],pL[i+1],tp);
+    const p=pts[pts.length-1];
+    const pL=p.map(mirrorX);
+    for(let i=0;i<p.length-1;i++) tri(W4,p[i+1],p[i],[0,-16.5,-0.52]);
+    for(let i=0;i<pL.length-1;i++) tri(W4,pL[i],pL[i+1],[0,-16.5,-0.52]);
   }
-  // Face firewall
+  // Face firewall (avant cabine, derrière capot)
   {
-    const p=pts[0], pL=p.map(mirrorX), fp=[0,13.5,0.40];
-    for(let i=0;i<p.length-1;i++) tri(W2,p[i],p[i+1],fp);
-    for(let i=0;i<pL.length-1;i++) tri(W2,pL[i+1],pL[i],fp);
+    const p=pts[0];
+    const [y]=FS[0];
+    const pL=p.map(mirrorX);
+    for(let i=0;i<p.length-1;i++) tri(W2,p[i],p[i+1],[0,y,-0.10]);
+    for(let i=0;i<pL.length-1;i++) tri(W2,pL[i+1],pL[i],[0,y,-0.10]);
   }
 
-  // ══ BANDE ROUGE — fine ligne sur les flancs cabine
+  // ══ BANDES ROUGES — sur les flancs cabine (F0→F2)
   {
-    const e=0.03;
-    for(let si=0;si<4;si++){
-      const A=pts[si], B=pts[si+1];
-      // Milieu du flanc (point ~NSEC/2 = le plus large)
-      const iM=Math.floor(NSEC/2);
-      const zA0=A[iM][2], zA1=A[iM][2]-0.18;
-      const zB0=B[iM][2], zB1=B[iM][2]-0.18;
-      const xA=A[iM][0]+e, xB=B[iM][0]+e;
-      const yA=A[0][1], yB=B[0][1];
-      quad(RD,[xA,yA,zA0],[xB,yB,zB0],[xB,yB,zB1],[xA,yA,zA1]);
-      quad(RD,[-xA,yA,zA1],[-xB,yB,zB1],[-xB,yB,zB0],[-xA,yA,zA0]);
+    const e=0.025;
+    for(let i=0;i<2;i++){  // segments F0-F1 et F1-F2
+      const A=pts[i], B=pts[i+1];
+      // shoulder = pts[2] et pts[3] = flanc droit
+      // Interpolation en z entre shoulder haut (idx2) et shoulder bas (idx3)
+      function stripe(t0,t1){
+        const zA0=A[2][2]*(1-t0)+A[3][2]*t0, zA1=A[2][2]*(1-t1)+A[3][2]*t1;
+        const zB0=B[2][2]*(1-t0)+B[3][2]*t0, zB1=B[2][2]*(1-t1)+B[3][2]*t1;
+        const xA=A[2][0]+e, xB=B[2][0]+e;
+        const yA=A[0][1], yB=B[0][1];
+        quad(RD,[xA,yA,zA0],[xB,yB,zB0],[xB,yB,zB1],[xA,yA,zA1]);
+        quad(RD,[-xA,yA,zA1],[-xB,yB,zB1],[-xB,yB,zB0],[-xA,yA,zA0]);
+      }
+      stripe(0.15,0.35);   // bande haute
+      stripe(0.60,0.80);   // bande basse
     }
   }
 
-  // ══ VITRES
+  // ══ VITRES — taille réaliste (pas toute la hauteur !)
+  // Sur le vrai C172 : vitres entre z_bas_vitre≈+0.5 et z_haut_vitre≈+2.1
   {
-    const vZ1=0.10, vZ2=2.10, e=0.02;
-    // Pare-brise (incliné)
-    quad(GL, [-1.20,13.5,vZ1],[1.20,13.5,vZ1],[1.50,9.5,vZ2],[-1.50,9.5,vZ2]);
-    // Vitre latérale D
-    quad(GL2,[1.72+e,9.5,vZ1],[1.72+e,9.5,vZ2],[1.68+e,-2.0,vZ2-0.05],[1.68+e,-2.0,vZ1+0.05]);
-    // Vitre latérale G
-    quad(GL2,[-1.72-e,9.5,vZ1],[-1.68-e,-2.0,vZ1+0.05],[-1.68-e,-2.0,vZ2-0.05],[-1.72-e,9.5,vZ2]);
-    // Vitre arrière D
-    quad(GL2,[1.68+e,-2.0,vZ1+0.15],[1.68+e,-2.0,vZ2-0.25],[0.88,-3.8,vZ2-0.70],[0.88,-3.8,vZ1+0.28]);
-    quad(GL2,[-1.68-e,-2.0,vZ1+0.15],[-0.88,-3.8,vZ1+0.28],[-0.88,-3.8,vZ2-0.70],[-1.68-e,-2.0,vZ2-0.25]);
-    // Toit vitré
-    quad(GL, [-1.60,9.5,vZ2+0.10],[1.60,9.5,vZ2+0.10],[1.58,-2.0,vZ2+0.03],[-1.58,-2.0,vZ2+0.03]);
+    const vZ1=-0.10, vZ2=2.05;  // bas et haut de la rangée de vitres
+    const e=0.02;
+    // Pare-brise (incliné, y 13.5→9.5)
+    quad(GL, [-1.48,13.5,vZ1],[1.48,13.5,vZ1],[1.65,9.5,vZ2],[-1.65,9.5,vZ2]);
+    // Grande vitre latérale D (y 9.5→-2.0)
+    quad(GL2,[1.70+e, 9.5,vZ1],[1.70+e, 9.5,vZ2],[1.68+e,-2.0,vZ2-0.05],[1.68+e,-2.0,vZ1+0.05]);
+    // Grande vitre lat G
+    quad(GL2,[-1.70-e, 9.5,vZ1],[-1.68-e,-2.0,vZ1+0.05],[-1.68-e,-2.0,vZ2-0.05],[-1.70-e, 9.5,vZ2]);
+    // Vitre arrière D (petite)
+    quad(GL2,[1.68+e,-2.0,vZ1+0.15],[1.68+e,-2.0,vZ2-0.25],[0.88,-3.8,vZ2-0.80],[0.88,-3.8,vZ1+0.28]);
+    quad(GL2,[-1.68-e,-2.0,vZ1+0.15],[-0.88,-3.8,vZ1+0.28],[-0.88,-3.8,vZ2-0.80],[-1.68-e,-2.0,vZ2-0.25]);
+    // Toit vitré (rail)
+    quad(GL, [-1.70,9.5,vZ2+0.12],[1.70,9.5,vZ2+0.12],[1.68,-2.0,vZ2+0.05],[-1.68,-2.0,vZ2+0.05]);
   }
 
-  // ══ AILES HIGH-WING — profil aérodynamique fin
-  // Chaque station : [x, yLE, chord, thickness, camber, dihedral_z]
-  // yLE = y du bord d'attaque, chord = corde, thickness = épaisseur relative (0-1)
+  // ══ AILES HIGH-WING
   function wing(s){
-    const WS=[
-      {x:s*1.72,  yLE:10.5, chord:3.8, thick:0.12, camb:0.03, dz:0.00},
-      {x:s*5.0,   yLE:10.2, chord:3.6, thick:0.12, camb:0.03, dz:0.04},
-      {x:s*9.0,   yLE:9.8,  chord:3.3, thick:0.11, camb:0.025,dz:0.08},
-      {x:s*13.0,  yLE:9.4,  chord:3.0, thick:0.11, camb:0.02, dz:0.13},
-      {x:s*17.0,  yLE:9.0,  chord:2.7, thick:0.10, camb:0.015,dz:0.18},
-      {x:s*20.0,  yLE:8.6,  chord:2.4, thick:0.09, camb:0.01, dz:0.23},
-      {x:s*22.0,  yLE:8.4,  chord:2.0, thick:0.07, camb:0.005,dz:0.26},
+    const WP=[
+      [s*1.72,  9.5,1.5, 0.18,-0.14,0.00],
+      [s*6.0,   9.0,1.8, 0.20,-0.12,0.05],
+      [s*12.0,  8.3,2.2, 0.22,-0.10,0.12],
+      [s*18.0,  7.7,2.6, 0.24,-0.08,0.20],
+      [s*22.0,  7.3,2.9, 0.25,-0.07,0.26],
     ];
-    // Profil NACA simplifié : 5 points par section (bord d'attaque → bord de fuite)
-    function airfoil(st){
-      const {x, yLE, chord, thick, camb, dz} = st;
-      const pts=[];
-      const NP=6; // points par surface (haut et bas)
-      // Surface supérieure (bord d'attaque → bord de fuite)
-      for(let i=0;i<=NP;i++){
-        const t=i/NP; // 0=LE, 1=TE
-        const yc=yLE-t*chord;
-        const yt=thick*chord*5*(0.2969*Math.sqrt(t)-0.126*t-0.3516*t*t+0.2843*t*t*t-0.1015*t*t*t*t);
-        const yca=camb*chord*4*t*(1-t); // cambrure
-        pts.push([x, yc, dz+yca+yt]);
-      }
-      // Surface inférieure (bord de fuite → bord d'attaque)
-      for(let i=NP;i>=0;i--){
-        const t=i/NP;
-        const yc=yLE-t*chord;
-        const yt=thick*chord*5*(0.2969*Math.sqrt(t)-0.126*t-0.3516*t*t+0.2843*t*t*t-0.1015*t*t*t*t);
-        const yca=camb*chord*4*t*(1-t);
-        pts.push([x, yc, dz+yca-yt]);
-      }
-      return pts; // 2*(NP+1) points : top then bottom
+    for(let i=0;i<WP.length-1;i++){
+      const [xa,yaa,yab,zta,zba,dza]=WP[i],[xb,yba,ybb,ztb,zbb,dzb]=WP[i+1];
+      const zmA=(zta+zba)/2+dza,zmB=(ztb+zbb)/2+dzb;
+      quad(W, [xa,yab,zta+dza],[xa,yaa,zta+dza],[xb,yba,ztb+dzb],[xb,ybb,ztb+dzb]);
+      quad(W3,[xa,yab,zba+dza],[xb,ybb,zbb+dzb],[xb,yba,zbb+dzb],[xa,yaa,zba+dza]);
+      quad(W, [xa,yaa,zmA],[xb,yba,zmB],[xb,yba,ztb+dzb],[xa,yaa,zta+dza]);
+      quad(W2,[xa,yaa,zba+dza],[xa,yaa,zmA],[xb,yba,zmB],[xb,yba,zbb+dzb]);
+      quad(W2,[xa,yab,zta+dza],[xb,ybb,ztb+dzb],[xb,ybb,zbb+dzb],[xa,yab,zba+dza]);
     }
-    const sections=WS.map(airfoil);
-    const NP=6;
-    for(let si=0;si<sections.length-1;si++){
-      const A=sections[si], B=sections[si+1];
-      // Surface supérieure
-      for(let i=0;i<NP;i++){
-        quad(W, A[i],A[i+1],B[i+1],B[i]);
-      }
-      // Surface inférieure
-      for(let i=NP+1;i<2*(NP+1)-1;i++){
-        quad(W3, A[i],A[i+1],B[i+1],B[i]);
-      }
-      // Bord de fuite (connecter top TE et bottom TE)
-      quad(W2, A[NP],B[NP],B[NP+1],A[NP+1]);
-    }
-    // Wingtip
-    const tip=sections[sections.length-1];
-    for(let i=0;i<NP;i++) tri(W2, tip[i],tip[i+1],[tip[0][0]+s*0.1,tip[0][1]-WS[WS.length-1].chord/2,WS[WS.length-1].dz]);
-    // Feu bout d'aile
-    const tipX=WS[WS.length-1].x;
-    quad(s>0?'#d42020':'#20a030',
-      [tipX+s*0.04,WS[WS.length-1].yLE-0.3,WS[WS.length-1].dz-0.08],
-      [tipX+s*0.04,WS[WS.length-1].yLE-0.8,WS[WS.length-1].dz-0.08],
-      [tipX+s*0.04,WS[WS.length-1].yLE-0.8,WS[WS.length-1].dz+0.08],
-      [tipX+s*0.04,WS[WS.length-1].yLE-0.3,WS[WS.length-1].dz+0.08]);
+    const [xs,ysa,ysb,zts,zbs,dzs]=WP[4];
+    quad(W2,[xs,ysa,zbs+dzs],[xs,ysb,zbs+dzs],[xs,ysb,zts+dzs],[xs,ysa,zts+dzs]);
+    quad(s>0?'#d42020':'#20a030',[xs+s*.02,ysa,zbs+dzs],[xs+s*.02,ysb,zbs+dzs],[xs+s*.02,ysb,zts+dzs],[xs+s*.02,ysa,zts+dzs]);
   }
   wing(+1); wing(-1);
 
-  // STRUTS (hauban aile → fuselage)
+  // STRUTS
   function struts(s){
-    const w=0.08;
+    const w=0.09;
     function st(wx,wy,wz,fx,fy,fz){
       quad(GY,[wx-w,wy,wz],[wx+w,wy,wz],[fx+w,fy,fz],[fx-w,fy,fz]);
-      quad(GK,[wx-w,wy,wz+.03],[fx-w,fy,fz+.03],[fx+w,fy,fz+.03],[wx+w,wy,wz+.03]);
+      quad(GK,[wx-w,wy,wz+.04],[fx-w,fy,fz+.04],[fx+w,fy,fz+.04],[wx+w,wy,wz+.04]);
       quad(GY,[wx,wy,wz-w],[fx,fy,fz-w],[fx,fy,fz+w],[wx,wy,wz+w]);
     }
-    // Hauban avant : aile (span ~9) → bas fuselage
-    st(s*9.0,8.8,-0.10,  s*2.2,7.5,-1.55);
-    // Hauban arrière
-    st(s*7.0,3.5,-0.10,  s*1.8,3.8,-1.55);
-    // Barre horizontale reliant les deux
-    quad(GY,[s*7.0,3.5,-0.14],[s*9.0,8.8,-0.14],[s*9.0,8.8,-0.06],[s*7.0,3.5,-0.06]);
+    st(s*9.0,7.5,-0.14,  s*2.5,7.2,-1.55);
+    st(s*6.5,3.2,-0.14,  s*1.8,3.5,-1.55);
+    quad(GY,[s*6.5,3.2,-0.18],[s*9.0,7.5,-0.18],[s*9.0,7.5,-0.10],[s*6.5,3.2,-0.10]);
   }
   struts(+1); struts(-1);
 
-  // ══ EMPENNAGE HORIZONTAL — profil fin
+  // ══ EMPENNAGE HORIZONTAL
   function stab(s){
     const E=[
-      [s*0.30, -11.5, 3.5, 0.06, -0.50],
-      [s*2.5,  -11.8, 3.0, 0.05, -0.48],
-      [s*5.0,  -12.2, 2.5, 0.05, -0.46],
-      [s*7.5,  -12.5, 2.0, 0.04, -0.44],
+      [s*0.30,-10.0,-13.5,-0.40,-0.52,0.00],
+      [s*3.8, -10.4,-13.8,-0.38,-0.50,0.04],
+      [s*7.5, -10.9,-14.2,-0.42,-0.54,0.10],
     ];
     for(let i=0;i<E.length-1;i++){
-      const [xa,yLEa,ca,ta,dza]=E[i],[xb,yLEb,cb,tb,dzb]=E[i+1];
-      const ha=ta*ca, hb=tb*cb;
-      // Surface supérieure
-      quad(W, [xa,yLEa,dza+ha],[xa,yLEa-ca,dza+ha*0.1],[xb,yLEb-cb,dzb+hb*0.1],[xb,yLEb,dzb+hb]);
-      // Surface inférieure
-      quad(W3,[xa,yLEa,dza-ha*0.5],[xb,yLEb,dzb-hb*0.5],[xb,yLEb-cb,dzb-hb*0.1],[xa,yLEa-ca,dza-ha*0.1]);
-      // Bord d'attaque
-      quad(W2,[xa,yLEa,dza+ha],[xb,yLEb,dzb+hb],[xb,yLEb,dzb-hb*0.5],[xa,yLEa,dza-ha*0.5]);
+      const [xa,yaa,yab,zta,zba,dza]=E[i],[xb,yba,ybb,ztb,zbb,dzb]=E[i+1];
+      quad(W, [xa,yab,zta+dza],[xa,yaa,zta+dza],[xb,yba,ztb+dzb],[xb,ybb,ztb+dzb]);
+      quad(W3,[xa,yab,zba+dza],[xb,ybb,zbb+dzb],[xb,yba,zbb+dzb],[xa,yaa,zba+dza]);
+      quad(W2,[xa,yaa,zba+dza],[xb,yba,zbb+dzb],[xb,yba,ztb+dzb],[xa,yaa,zta+dza]);
+      quad(W3,[xa,yab,zta+dza],[xb,ybb,ztb+dzb],[xb,ybb,zbb+dzb],[xa,yab,zba+dza]);
     }
+    const [xs,ysa,ysb,zts,zbs,dzs]=E[2];
+    quad(W2,[xs,ysa,zbs+dzs],[xs,ysb,zbs+dzs],[xs,ysb,zts+dzs],[xs,ysa,zts+dzs]);
   }
   stab(+1); stab(-1);
 
-  // ══ DÉRIVE VERTICALE (profil plus lisse)
+  // ══ DÉRIVE VERTICALE
   {
     const fw=0.23;
     const F=[
       [-10.0,-15.0,-0.82],
-      [-10.1,-15.3, 0.10],
       [-10.2,-15.6, 0.65],
-      [-10.4,-15.8, 1.60],
       [-10.6,-15.9, 2.55],
-      [-11.0,-15.9, 3.70],
       [-11.5,-15.8, 4.85],
-      [-11.9,-15.5, 5.80],
       [-12.3,-15.0, 6.60],
-      [-12.7,-14.4, 7.10],
       [-13.0,-13.8, 7.42],
-      [-13.2,-13.0, 7.35],
       [-13.3,-12.4, 7.20],
     ];
     for(let i=0;i<F.length-1;i++){
@@ -1233,47 +1198,38 @@ const CESSNA_MESH=(()=>{
       quad(W, [fw,ya0,z0],[fw,ya1,z1],[-fw,ya1,z1],[-fw,ya0,z0]);
       quad(W2,[-fw,ya0,z0],[-fw,ya1,z1],[fw,ya1,z1],[fw,ya0,z0]);
     }
-    tri(W,[fw,F[F.length-1][0],F[F.length-1][2]],[-fw,F[F.length-1][0],F[F.length-1][2]],[0,F[F.length-1][0]-0.5,F[F.length-1][2]-0.4]);
+    tri(W,[fw,F[6][0],F[6][2]],[-fw,F[6][0],F[6][2]],[0,F[6][0]-0.5,F[6][2]-0.4]);
     // Bandes rouges dérive
-    for(let i=4;i<F.length-1;i++){
+    for(let i=2;i<F.length-1;i++){
       const [ya0,,z0]=F[i],[ya1,,z1]=F[i+1];
       const za=z0*0.20+0.55,zb=z0*0.52,zc=z1*0.20+0.55,zd=z1*0.52;
       if(zb>za+0.10) quad(RD,[fw+.02,ya0,za],[fw+.02,ya1,zc],[fw+.02,ya1,zd],[fw+.02,ya0,zb]);
     }
     // Feu sommet
-    const topF=F[F.length-2];
-    tri('#ff4040',[fw*.6,topF[0],topF[2]+.05],[-fw*.6,topF[0],topF[2]+.05],[0,topF[0]+.35,topF[2]+.05]);
+    tri('#ff4040',[fw*.6,F[5][0],F[5][2]+.05],[-fw*.6,F[5][0],F[5][2]+.05],[0,F[5][0]+.35,F[5][2]+.05]);
   }
 
-  // ══ TRAIN D'ATTERRISSAGE
-  // Roulette de nez
-  gBox(GY, 0,16.5,-1.55, 0,16.5,-2.70,0.12);
-  gBox(GY,-0.25,16.5,-2.58,-0.25,16.5,-3.20,0.06);
-  gBox(GY, 0.25,16.5,-2.58, 0.25,16.5,-3.20,0.06);
-  gWheel(TY,HB, 0,16.5,-3.50, 0.42,0.14);
-  // Train principal
-  gBox(GY,-1.72,4.2,-1.60,-3.45,4.0,-2.82,0.14);
-  gWheel(TY,HB,-3.45,4.0,-3.28, 0.72,0.22);
-  gBox(GY, 1.72,4.2,-1.60, 3.45,4.0,-2.82,0.14);
-  gWheel(TY,HB, 3.45,4.0,-3.28, 0.72,0.22);
+  // ══ TRAIN
+  gBox(GY, 0,16.5,-1.52, 0,16.5,-2.70,0.13);
+  gBox(GY,-0.28,16.5,-2.58,-0.28,16.5,-3.25,0.07);
+  gBox(GY, 0.28,16.5,-2.58, 0.28,16.5,-3.25,0.07);
+  gWheel(TY,HB, 0,16.5,-3.58, 0.45,0.16);
+  gBox(GY,-1.72,4.2,-1.60,-3.45,4.0,-2.82,0.16);
+  gWheel(TY,HB,-3.45,4.0,-3.28, 0.76,0.25);
+  gBox(GY, 1.72,4.2,-1.60, 3.45,4.0,-2.82,0.16);
+  gWheel(TY,HB, 3.45,4.0,-3.28, 0.76,0.25);
 
-  // Carénages de roue (wheel pants) — forme profilée
+  // Wheel pants
   function pant(s){
-    const cx=s*3.45, yF=5.6, yR=2.4, zT=-2.0, zM=-3.28, zB=-3.90;
-    const hw=0.65;
-    // Dessus profilé
-    quad(W2,[cx-hw,yF,zT],[cx+hw,yF,zT],[cx+hw,yR,zT],[cx-hw,yR,zT]);
-    // Côtés
-    quad(W3,[cx-hw,yF,zT],[cx-hw,yR,zT],[cx-hw*0.6,yR,zB],[cx-hw*0.6,yF,zB]);
-    quad(W2,[cx+hw,yF,zT],[cx+hw*0.6,yF,zB],[cx+hw*0.6,yR,zB],[cx+hw,yR,zT]);
-    // Dessous
-    quad(GY,[cx-hw*0.6,yF,zB],[cx-hw*0.6,yR,zB],[cx+hw*0.6,yR,zB],[cx+hw*0.6,yF,zB]);
-    // Avant
-    tri(W2,[cx-hw,yF,zT],[cx+hw,yF,zT],[cx,yF+0.3,zM]);
-    tri(GY,[cx-hw*0.6,yF,zB],[cx+hw*0.6,yF,zB],[cx,yF+0.3,zM]);
-    // Arrière
-    tri(W3,[cx-hw,yR,zT],[cx,yR-0.2,zM],[cx+hw,yR,zT]);
-    tri(GY,[cx-hw*0.6,yR,zB],[cx+hw*0.6,yR,zB],[cx,yR-0.2,zM]);
+    const x1=s*2.50,x2=s*4.20,yF=5.8,yR=2.2,zT=-1.60,zB=-4.12;
+    quad(W2,[x1,yF,zT],[x2,yF,zT],[x2,yR,zT],[x1,yR,zT]);
+    quad(GY, [x1,yF,zB],[x1,yR,zB],[x2,yR,zB],[x2,yF,zB]);
+    tri(W2,[x1,yF,zT],[x2,yF,zT],[x1,yF,zB]);
+    tri(W2,[x2,yF,zT],[x2,yF,zB],[x1,yF,zB]);
+    tri(W3,[x1,yR,zT],[x1,yR,zB],[x2,yR,zT]);
+    tri(W3,[x1,yR,zB],[x2,yR,zB],[x2,yR,zT]);
+    quad(W2,[x1,yF,zT],[x1,yR,zT],[x2,yR,zT],[x2,yF,zT]);
+    quad(GY, [x1,yF,zB],[x2,yF,zB],[x2,yR,zB],[x1,yR,zB]);
   }
   pant(+1); pant(-1);
 
@@ -1281,19 +1237,19 @@ const CESSNA_MESH=(()=>{
   {
     const aw=0.04;
     quad(GY,[aw,-4.0,2.30],[-aw,-4.0,2.30],[-aw,-5.5,2.28],[aw,-5.5,2.28]);
-    tri(GY,[aw,-4.0,2.30],[-aw,-4.0,2.30],[0,-4.5,3.80]);
-    tri(GY,[-aw,-5.5,2.28],[aw,-5.5,2.28],[0,-4.5,3.80]);
-    quad(GY,[aw,-4.0,2.30],[aw,-5.5,2.28],[0,-4.5,3.80],[0,-4.5,3.80]);
-    quad(GY,[-aw,-4.0,2.30],[0,-4.5,3.80],[0,-4.5,3.80],[-aw,-5.5,2.28]);
+    tri(GY,[aw,-4.0,2.30],[-aw,-4.0,2.30],[0,-4.2,4.20]);
+    tri(GY,[-aw,-5.5,2.28],[aw,-5.5,2.28],[0,-4.2,4.20]);
+    quad(GY,[aw,-4.0,2.30],[aw,-5.5,2.28],[0,-4.2,4.20],[0,-4.2,4.20]);
+    quad(GY,[-aw,-4.0,2.30],[0,-4.2,4.20],[0,-4.2,4.20],[-aw,-5.5,2.28]);
   }
 
   // ══ ANTENNE ELT (ventre) ══
   {
     const aw=0.03;
-    tri(GY,[aw,-6.0,-1.50],[-aw,-6.0,-1.50],[0,-6.5,-2.20]);
-    tri(GY,[-aw,-7.0,-1.48],[aw,-7.0,-1.48],[0,-6.5,-2.20]);
-    quad(GY,[aw,-6.0,-1.50],[0,-6.5,-2.20],[0,-6.5,-2.20],[aw,-7.0,-1.48]);
-    quad(GY,[-aw,-6.0,-1.50],[-aw,-7.0,-1.48],[0,-6.5,-2.20],[0,-6.5,-2.20]);
+    tri(GY,[aw,-6.0,-1.50],[-aw,-6.0,-1.50],[0,-6.5,-2.40]);
+    tri(GY,[-aw,-7.0,-1.48],[aw,-7.0,-1.48],[0,-6.5,-2.40]);
+    quad(GY,[aw,-6.0,-1.50],[0,-6.5,-2.40],[0,-6.5,-2.40],[aw,-7.0,-1.48]);
+    quad(GY,[-aw,-6.0,-1.50],[-aw,-7.0,-1.48],[0,-6.5,-2.40],[0,-6.5,-2.40]);
   }
 
   // ══ TUBE PITOT (aile gauche) ══
@@ -1308,14 +1264,14 @@ const CESSNA_MESH=(()=>{
   // ══ FEUX DE POSITION (stockés pour le glow, pas rendus comme mesh) ══
   // Red=port(left), Green=starboard(right), White=tail
   M._navLights=[
-    {lx:-22.0, ly:8.4, lz:0.26, color:'#ff2020', glow:'rgba(255,40,40,'},   // left wingtip
-    {lx: 22.0, ly:8.4, lz:0.26, color:'#20ff40', glow:'rgba(40,255,60,'},    // right wingtip
-    {lx:  0.0, ly:-16.0, lz:0.00,color:'#ffffff', glow:'rgba(255,255,255,'},  // tail
-    {lx:  0.0, ly:-13.0, lz:7.42,color:'#ff4040', glow:'rgba(255,80,60,'},    // top fin beacon
+    {lx:-22.0, ly:7.3, lz:2.9+0.26, color:'#ff2020', glow:'rgba(255,40,40,'},   // left wingtip
+    {lx: 22.0, ly:7.3, lz:2.9+0.26, color:'#20ff40', glow:'rgba(40,255,60,'},    // right wingtip
+    {lx:  0.0, ly:-16.0, lz:-0.42,   color:'#ffffff', glow:'rgba(255,255,255,'},  // tail
+    {lx:  0.0, ly:-13.0, lz:7.42,    color:'#ff4040', glow:'rgba(255,80,60,'},    // top fin beacon
   ];
 
   // ══ PHARE ATTERRISSAGE (sous aile gauche) ══
-  M._landingLight={lx:-6.0, ly:9.5, lz:-0.10};
+  M._landingLight={lx:-6.0, ly:8.5, lz:-0.14};
 
   return M;
 })();
@@ -1345,7 +1301,7 @@ function drawCessna(){
 
   const rpm=pl.throttle;
   const PA=performance.now()*0.022*(0.2+rpm*0.8);
-  const PR=4.2, PW=0.30, PY=20.8;
+  const PR=4.2, PW=0.30, PY=21.3;
 
   // ── Tout dans UN SEUL tableau visible[], trié par profondeur ──
   // Hélice + disque + mesh → un seul painter's algorithm
