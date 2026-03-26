@@ -253,6 +253,22 @@ function project(wx,wy,wz){
   const FOV=Math.min(W,H)*0.72;
   return { sx:W/2+fx/fy*FOV, sy:H/2-fz/fy*FOV, d:fy };
 }
+// Projection "soft" pour le terrain : clamp au near plane au lieu de null.
+// Les sommets derrière la caméra sont projetés à des positions extrêmes,
+// mais le clipping du canvas élimine naturellement les parties hors-écran.
+function projectSoft(wx,wy,wz){
+  let dx=wx-cam.cx, dy=wy-cam.cy, dz=wz-cam.cz;
+  const cY=Math.cos(-cam.cyaw),sY=Math.sin(-cam.cyaw);
+  let ax= dx*cY+dy*sY, ay=-dx*sY+dy*cY, az=dz;
+  const cP=Math.cos(-cam.cpitch),sP=Math.sin(-cam.cpitch);
+  let bx=ax, by=ay*cP-az*sP, bz=ay*sP+az*cP;
+  const cR=Math.cos(cam.croll),sR=Math.sin(cam.croll);
+  let fx=bx*cR+bz*sR, fy=by, fz=-bx*sR+bz*cR;
+  const behind=fy<2.0;
+  if(fy<0.5) fy=0.5;
+  const FOV=Math.min(W,H)*0.72;
+  return { sx:W/2+fx/fy*FOV, sy:H/2-fz/fy*FOV, d:Math.max(fy,2), behind };
+}
 
 // ══ SOLEIL FIXE DANS LE MONDE ══════════════════════
 const SUN_WX=0.55, SUN_WY=1.0, SUN_WZ=0.55;
@@ -465,14 +481,14 @@ function drawTerrain(T){
           const wg=Math.round(72*(1-fog)+FOG_G*fog);
           const wb=Math.round(138*(1-fog)+FOG_B*fog);
           const wcol=`rgb(${wr},${wg},${wb})`;
-          const pA=project(wx0,wy0,0), pB=project(wx1,wy0,0);
-          const pC=project(wx1,wy1,0), pD=project(wx0,wy1,0);
-          if(pA&&pB&&pD){
+          const pA=projectSoft(wx0,wy0,0), pB=projectSoft(wx1,wy0,0);
+          const pC=projectSoft(wx1,wy1,0), pD=projectSoft(wx0,wy1,0);
+          if(!(pA.behind&&pB.behind&&pD.behind)){
             ctx.fillStyle=wcol; ctx.beginPath();
             ctx.moveTo(pA.sx,pA.sy); ctx.lineTo(pB.sx,pB.sy);
             ctx.lineTo(pD.sx,pD.sy); ctx.closePath(); ctx.fill();
           }
-          if(pB&&pC&&pD){
+          if(!(pB.behind&&pC.behind&&pD.behind)){
             ctx.fillStyle=wcol; ctx.beginPath();
             ctx.moveTo(pB.sx,pB.sy); ctx.lineTo(pC.sx,pC.sy);
             ctx.lineTo(pD.sx,pD.sy); ctx.closePath(); ctx.fill();
@@ -480,10 +496,10 @@ function drawTerrain(T){
           continue;
         }
 
-        A.pr=project(A.wx,A.wy,A.wz);
-        B.pr=project(B.wx,B.wy,B.wz);
-        C.pr=project(C.wx,C.wy,C.wz);
-        D.pr=project(D.wx,D.wy,D.wz);
+        A.ps=projectSoft(A.wx,A.wy,A.wz);
+        B.ps=projectSoft(B.wx,B.wy,B.wz);
+        C.ps=projectSoft(C.wx,C.wy,C.wz);
+        D.ps=projectSoft(D.wx,D.wy,D.wz);
         drawTriangle(A,B,D,T,FAR);
         drawTriangle(B,C,D,T,FAR);
       }
@@ -574,11 +590,12 @@ function drawTriangle(A,B,C,T,FAR){
   if(!isFinite(A.wz)||!isFinite(B.wz)||!isFinite(C.wz)) return;
 
   // Triangle côtier : projeter les coins eau à z=0 (évite le vide littorale)
-  const isCoastal=(A.wz<1)||(B.wz<1)||(C.wz<1);
-  const pA = A.wz<1 ? project(A.wx,A.wy,0) : A.pr;
-  const pB = B.wz<1 ? project(B.wx,B.wy,0) : B.pr;
-  const pC = C.wz<1 ? project(C.wx,C.wy,0) : C.pr;
-  if(!pA||!pB||!pC) return;
+  // Utilise projectSoft pour éviter les trous quand un sommet est derrière la caméra
+  const pA = A.wz<1 ? projectSoft(A.wx,A.wy,0) : (A.ps||projectSoft(A.wx,A.wy,A.wz));
+  const pB = B.wz<1 ? projectSoft(B.wx,B.wy,0) : (B.ps||projectSoft(B.wx,B.wy,B.wz));
+  const pC = C.wz<1 ? projectSoft(C.wx,C.wy,0) : (C.ps||projectSoft(C.wx,C.wy,C.wz));
+  // Si tous les sommets sont derrière la caméra, on skip
+  if(pA.behind&&pB.behind&&pC.behind) return;
   const dist=pA.d;
   if(dist>FAR*1.05) return;
 
