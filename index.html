@@ -467,7 +467,7 @@ function drawTerrain(T){
         const cdx=wx0+step*.5-pl.x, cdy=wy0+step*.5-pl.y;
         const d2=cdx*cdx+cdy*cdy;
         if(d2>maxD2) continue;
-        if(cdx*fX+cdy*fY < -step*3.5) continue; // frustum
+        if(cdx*fX+cdy*fY < -step*5) continue; // frustum (marge large pour éviter les trous)
 
         const A={wx:wx0,wy:wy0,wz:terrainH(wx0,wy0)};
         const B={wx:wx1,wy:wy0,wz:terrainH(wx1,wy0)};
@@ -952,30 +952,37 @@ const CESSNA_MESH=(()=>{
 
   // ══════════════════════════════════════════
   // CAPOT MOTEUR — y: 13.5 → 19.8
-  // Section circulaire, 8 faces longitudinales
+  // Section circulaire, 12 faces longitudinales (plus lisse)
   // Centré à z≈-2.1 (plus bas que le fuselage cabine)
   // ══════════════════════════════════════════
   {
-    // 4 stations : [y, rx, rz, cz]
-    const S=[[13.5,1.22,1.30,-2.05],[15.2,1.28,1.38,-2.10],[17.2,1.12,1.22,-2.06],[19.2,0.75,0.78,-2.03]];
-    const cols=[MT,MT2,MT2,MT2,MT2,MT2,MT2,MT2];
+    // 5 stations pour un profil plus progressif : [y, rx, rz, cz]
+    const S=[
+      [13.5, 1.22, 1.30, -2.05],
+      [14.8, 1.28, 1.38, -2.08],
+      [16.2, 1.24, 1.34, -2.10],
+      [17.8, 1.08, 1.18, -2.06],
+      [19.2, 0.72, 0.75, -2.03]
+    ];
     for(let s=0;s<S.length-1;s++){
       const [ya,rxa,rza,cza]=S[s],[yb,rxb,rzb,czb]=S[s+1];
-      const N=8;
+      const N=12;
       for(let i=0;i<N;i++){
         const a0=i/N*Math.PI*2-Math.PI/2,a1=(i+1)/N*Math.PI*2-Math.PI/2;
+        const nz0=Math.sin(a0), nz1=Math.sin(a1);
+        const col=(nz0+nz1)>0.5?MT:MT2; // dessus plus clair
         const A=[Math.cos(a0)*rxa, ya, cza+Math.sin(a0)*rza];
         const B=[Math.cos(a1)*rxa, ya, cza+Math.sin(a1)*rza];
         const C=[Math.cos(a1)*rxb, yb, czb+Math.sin(a1)*rzb];
         const D=[Math.cos(a0)*rxb, yb, czb+Math.sin(a0)*rzb];
-        quad(cols[i],A,B,C,D);
+        quad(col,A,B,C,D);
       }
     }
-    // Fermeture avant
-    const [yf,rxf,rzf,czf]=S[3], N=8;
+    // Fermeture avant (cône spinner)
+    const [yf,rxf,rzf,czf]=S[S.length-1], N=12;
     for(let i=0;i<N;i++){
       const a0=i/N*Math.PI*2-Math.PI/2,a1=(i+1)/N*Math.PI*2-Math.PI/2;
-      tri(MT2,[0,19.8,czf],[Math.cos(a0)*rxf,yf,czf+Math.sin(a0)*rzf],[Math.cos(a1)*rxf,yf,czf+Math.sin(a1)*rzf]);
+      tri(MT2,[0,20.0,czf],[Math.cos(a0)*rxf,yf,czf+Math.sin(a0)*rzf],[Math.cos(a1)*rxf,yf,czf+Math.sin(a1)*rzf]);
     }
   }
 
@@ -1004,49 +1011,57 @@ const CESSNA_MESH=(()=>{
   // z_shoulder_off : décalage vertical des épaules par rapport au mi-hauteur
   const FS=[
     [13.5, 1.22, 2.30,-1.52, 0.35],  // F0 firewall
+    [ 9.0, 1.55, 2.34,-1.54, 0.33],  // F0b transition cabine
     [ 5.0, 1.72, 2.35,-1.55, 0.32],  // F1 cabine max
+    [ 1.0, 1.72, 2.32,-1.54, 0.32],  // F1b cabine milieu
     [-2.0, 1.68, 2.28,-1.50, 0.33],  // F2 fin cabine
     [-3.5, 1.02, 1.62,-1.20, 0.42],  // F3 step
+    [-5.5, 0.82, 1.35,-1.00, 0.46],  // F3b transition queue
     [-8.0, 0.68, 1.12,-0.82, 0.50],  // F4 queue
+    [-10.5,0.50, 0.90,-0.66, 0.55],  // F4b queue mid
     [-12.5,0.36, 0.72,-0.55, 0.60],  // F5 queue fine
+    [-14.5,0.22, 0.55,-0.48, 0.65],  // F5b queue narrow
     [-16.0,0.12, 0.42,-0.42, 0.70],  // F6 extrémité
   ];
 
-  // Pour chaque station, génère les 6 points [x,y,z] côté droit
+  // Pour chaque station, génère les 10 points [x,y,z] côté droit (plus arrondi)
   function fsPts(f){
     const [y,xm,zt,zb,so]=f;
     const zMid=(zt+zb)/2, zH=(zt-zb)/2;
     return [
-      [0,    y, zt],               // top-center
-      [xm*0.7, y, zt-zH*0.28],    // top-shoulder
-      [xm,   y, zMid+zH*so],       // shoulder haut
-      [xm,   y, zMid-zH*so],       // shoulder bas
-      [xm*0.7, y, zb+zH*0.22],    // bot-shoulder
-      [0,    y, zb],               // bot-center
+      [0,        y, zt],                  // top-center
+      [xm*0.42,  y, zt-zH*0.08],         // top-shoulder interne
+      [xm*0.72,  y, zt-zH*0.22],         // top-shoulder
+      [xm*0.92,  y, zMid+zH*so+zH*0.12], // upper-mid
+      [xm,       y, zMid+zH*so],          // shoulder haut (widest)
+      [xm,       y, zMid-zH*so],          // shoulder bas
+      [xm*0.92,  y, zMid-zH*so-zH*0.12], // lower-mid
+      [xm*0.72,  y, zb+zH*0.18],         // bot-shoulder
+      [xm*0.42,  y, zb+zH*0.06],         // bot-shoulder interne
+      [0,        y, zb],                  // bot-center
     ];
   }
 
   function mirrorX(p){ return [-p[0],p[1],p[2]]; }
 
-  // Connecte deux stations (6pts chacune)
+  // Connecte deux stations (10pts chacune)
   function fusSegment(A,B, cTop,cSide,cBot){
-    const N=6;
+    const N=10;
     // Côté droit
     for(let i=0;i<N-1;i++){
-      const col=i<2?cTop:i<4?cSide:cBot;
+      const col=i<3?cTop:i<7?cSide:cBot;
       quad(col, A[i],A[i+1],B[i+1],B[i]);
     }
-    // Dessus (entre top-L et top-R)
-    quad(cTop, A[0],B[0],B[0],[mirrorX(B[0])[0],B[0][1],B[0][2]]);
-    // En fait dessus = quad entre top-L et top-R des deux stations
+    // Dessus (entre top-L et top-R des deux stations)
     const AL=mirrorX(A[0]),BL=mirrorX(B[0]);
     quad(cTop, AL,A[0],B[0],BL);
     // Dessous
-    const A5L=mirrorX(A[5]),B5L=mirrorX(B[5]);
-    quad(cBot, A5L,B5L,B[5],A[5]);
+    const ABot=A[N-1], BBot=B[N-1];
+    const ABotL=mirrorX(ABot), BBotL=mirrorX(BBot);
+    quad(cBot, ABotL,BBotL,BBot,ABot);
     // Côté gauche (miroir)
     for(let i=0;i<N-1;i++){
-      const col=i<2?cTop:i<4?cSide:cBot;
+      const col=i<3?cTop:i<7?cSide:cBot;
       const pA=mirrorX(A[i]),pA1=mirrorX(A[i+1]),pB=mirrorX(B[i]),pB1=mirrorX(B[i+1]);
       quad(col, pA1,pA,pB,pB1);
     }
@@ -1055,12 +1070,17 @@ const CESSNA_MESH=(()=>{
   // Fuselage par segments
   const pts=FS.map(fsPts);
   const colsPerSeg=[
-    [W, W2,W3],   // firewall→cabine
-    [W, W2,W3],   // cabine→fin cabine
-    [W2,W3,W3],   // step
-    [W2,W3,W3],   // queue
-    [W3,W3,W4],   // queue fine
-    [W3,W3,W4],   // extrémité
+    [W, W2,W3],   // F0→F0b firewall→transition
+    [W, W2,W3],   // F0b→F1 transition→cabine
+    [W, W2,W3],   // F1→F1b cabine max
+    [W, W2,W3],   // F1b→F2 cabine→fin
+    [W2,W3,W3],   // F2→F3 step
+    [W2,W3,W3],   // F3→F3b step→queue
+    [W2,W3,W3],   // F3b→F4 queue
+    [W2,W3,W4],   // F4→F4b queue
+    [W3,W3,W4],   // F4b→F5 queue fine
+    [W3,W3,W4],   // F5→F5b queue narrow
+    [W3,W3,W4],   // F5b→F6 extrémité
   ];
   for(let i=0;i<pts.length-1;i++){
     fusSegment(pts[i],pts[i+1],...colsPerSeg[i]);
@@ -1069,29 +1089,30 @@ const CESSNA_MESH=(()=>{
   {
     const p=pts[pts.length-1];
     const pL=p.map(mirrorX);
-    for(let i=0;i<p.length-1;i++) tri(W4,p[i+1],p[i],[0,-16.5,-0.52]);
-    for(let i=0;i<pL.length-1;i++) tri(W4,pL[i],pL[i+1],[0,-16.5,-0.52]);
+    const tailPt=[0,-16.5,-0.52];
+    for(let i=0;i<p.length-1;i++) tri(W4,p[i+1],p[i],tailPt);
+    for(let i=0;i<pL.length-1;i++) tri(W4,pL[i],pL[i+1],tailPt);
   }
   // Face firewall (avant cabine, derrière capot)
   {
     const p=pts[0];
     const [y]=FS[0];
     const pL=p.map(mirrorX);
-    for(let i=0;i<p.length-1;i++) tri(W2,p[i],p[i+1],[0,y,-0.10]);
-    for(let i=0;i<pL.length-1;i++) tri(W2,pL[i+1],pL[i],[0,y,-0.10]);
+    const fwPt=[0,y,-0.10];
+    for(let i=0;i<p.length-1;i++) tri(W2,p[i],p[i+1],fwPt);
+    for(let i=0;i<pL.length-1;i++) tri(W2,pL[i+1],pL[i],fwPt);
   }
 
-  // ══ BANDES ROUGES — sur les flancs cabine (F0→F2)
+  // ══ BANDES ROUGES — sur les flancs cabine (F0→F4, couvre la cabine)
   {
     const e=0.025;
-    for(let i=0;i<2;i++){  // segments F0-F1 et F1-F2
+    for(let i=0;i<4;i++){  // segments de cabine (F0 à F2 avec stations intermédiaires)
       const A=pts[i], B=pts[i+1];
-      // shoulder = pts[2] et pts[3] = flanc droit
-      // Interpolation en z entre shoulder haut (idx2) et shoulder bas (idx3)
+      // shoulder haut = idx 4, shoulder bas = idx 5 (dans le nouveau schéma 10pts)
       function stripe(t0,t1){
-        const zA0=A[2][2]*(1-t0)+A[3][2]*t0, zA1=A[2][2]*(1-t1)+A[3][2]*t1;
-        const zB0=B[2][2]*(1-t0)+B[3][2]*t0, zB1=B[2][2]*(1-t1)+B[3][2]*t1;
-        const xA=A[2][0]+e, xB=B[2][0]+e;
+        const zA0=A[4][2]*(1-t0)+A[5][2]*t0, zA1=A[4][2]*(1-t1)+A[5][2]*t1;
+        const zB0=B[4][2]*(1-t0)+B[5][2]*t0, zB1=B[4][2]*(1-t1)+B[5][2]*t1;
+        const xA=A[4][0]+e, xB=B[4][0]+e;
         const yA=A[0][1], yB=B[0][1];
         quad(RD,[xA,yA,zA0],[xB,yB,zB0],[xB,yB,zB1],[xA,yA,zA1]);
         quad(RD,[-xA,yA,zA1],[-xB,yB,zB1],[-xB,yB,zB0],[-xA,yA,zA0]);
@@ -1119,14 +1140,17 @@ const CESSNA_MESH=(()=>{
     quad(GL, [-1.70,9.5,vZ2+0.12],[1.70,9.5,vZ2+0.12],[1.68,-2.0,vZ2+0.05],[-1.68,-2.0,vZ2+0.05]);
   }
 
-  // ══ AILES HIGH-WING
+  // ══ AILES HIGH-WING (profil plus détaillé)
   function wing(s){
     const WP=[
       [s*1.72,  9.5,1.5, 0.18,-0.14,0.00],
-      [s*6.0,   9.0,1.8, 0.20,-0.12,0.05],
-      [s*12.0,  8.3,2.2, 0.22,-0.10,0.12],
-      [s*18.0,  7.7,2.6, 0.24,-0.08,0.20],
-      [s*22.0,  7.3,2.9, 0.25,-0.07,0.26],
+      [s*4.0,   9.2,1.7, 0.19,-0.13,0.03],
+      [s*7.0,   8.9,1.9, 0.20,-0.12,0.06],
+      [s*10.5,  8.5,2.1, 0.21,-0.11,0.10],
+      [s*14.0,  8.1,2.3, 0.22,-0.10,0.14],
+      [s*17.5,  7.7,2.6, 0.23,-0.09,0.19],
+      [s*20.0,  7.5,2.8, 0.24,-0.08,0.23],
+      [s*22.0,  7.3,2.9, 0.22,-0.07,0.26],
     ];
     for(let i=0;i<WP.length-1;i++){
       const [xa,yaa,yab,zta,zba,dza]=WP[i],[xb,yba,ybb,ztb,zbb,dzb]=WP[i+1];
@@ -1137,7 +1161,8 @@ const CESSNA_MESH=(()=>{
       quad(W2,[xa,yaa,zba+dza],[xa,yaa,zmA],[xb,yba,zmB],[xb,yba,zbb+dzb]);
       quad(W2,[xa,yab,zta+dza],[xb,ybb,ztb+dzb],[xb,ybb,zbb+dzb],[xa,yab,zba+dza]);
     }
-    const [xs,ysa,ysb,zts,zbs,dzs]=WP[4];
+    // Wingtip arrondi
+    const [xs,ysa,ysb,zts,zbs,dzs]=WP[WP.length-1];
     quad(W2,[xs,ysa,zbs+dzs],[xs,ysb,zbs+dzs],[xs,ysb,zts+dzs],[xs,ysa,zts+dzs]);
     quad(s>0?'#d42020':'#20a030',[xs+s*.02,ysa,zbs+dzs],[xs+s*.02,ysb,zbs+dzs],[xs+s*.02,ysb,zts+dzs],[xs+s*.02,ysa,zts+dzs]);
   }
@@ -1157,11 +1182,13 @@ const CESSNA_MESH=(()=>{
   }
   struts(+1); struts(-1);
 
-  // ══ EMPENNAGE HORIZONTAL
+  // ══ EMPENNAGE HORIZONTAL (plus de stations)
   function stab(s){
     const E=[
       [s*0.30,-10.0,-13.5,-0.40,-0.52,0.00],
+      [s*2.0, -10.2,-13.7,-0.39,-0.51,0.02],
       [s*3.8, -10.4,-13.8,-0.38,-0.50,0.04],
+      [s*5.6, -10.7,-14.0,-0.40,-0.52,0.07],
       [s*7.5, -10.9,-14.2,-0.42,-0.54,0.10],
     ];
     for(let i=0;i<E.length-1;i++){
@@ -1176,16 +1203,22 @@ const CESSNA_MESH=(()=>{
   }
   stab(+1); stab(-1);
 
-  // ══ DÉRIVE VERTICALE
+  // ══ DÉRIVE VERTICALE (profil plus lisse)
   {
     const fw=0.23;
     const F=[
       [-10.0,-15.0,-0.82],
+      [-10.1,-15.3, 0.10],
       [-10.2,-15.6, 0.65],
+      [-10.4,-15.8, 1.60],
       [-10.6,-15.9, 2.55],
+      [-11.0,-15.9, 3.70],
       [-11.5,-15.8, 4.85],
+      [-11.9,-15.5, 5.80],
       [-12.3,-15.0, 6.60],
+      [-12.7,-14.4, 7.10],
       [-13.0,-13.8, 7.42],
+      [-13.2,-13.0, 7.35],
       [-13.3,-12.4, 7.20],
     ];
     for(let i=0;i<F.length-1;i++){
@@ -1193,15 +1226,16 @@ const CESSNA_MESH=(()=>{
       quad(W, [fw,ya0,z0],[fw,ya1,z1],[-fw,ya1,z1],[-fw,ya0,z0]);
       quad(W2,[-fw,ya0,z0],[-fw,ya1,z1],[fw,ya1,z1],[fw,ya0,z0]);
     }
-    tri(W,[fw,F[6][0],F[6][2]],[-fw,F[6][0],F[6][2]],[0,F[6][0]-0.5,F[6][2]-0.4]);
+    tri(W,[fw,F[F.length-1][0],F[F.length-1][2]],[-fw,F[F.length-1][0],F[F.length-1][2]],[0,F[F.length-1][0]-0.5,F[F.length-1][2]-0.4]);
     // Bandes rouges dérive
-    for(let i=2;i<F.length-1;i++){
+    for(let i=4;i<F.length-1;i++){
       const [ya0,,z0]=F[i],[ya1,,z1]=F[i+1];
       const za=z0*0.20+0.55,zb=z0*0.52,zc=z1*0.20+0.55,zd=z1*0.52;
       if(zb>za+0.10) quad(RD,[fw+.02,ya0,za],[fw+.02,ya1,zc],[fw+.02,ya1,zd],[fw+.02,ya0,zb]);
     }
     // Feu sommet
-    tri('#ff4040',[fw*.6,F[5][0],F[5][2]+.05],[-fw*.6,F[5][0],F[5][2]+.05],[0,F[5][0]+.35,F[5][2]+.05]);
+    const topF=F[F.length-2];
+    tri('#ff4040',[fw*.6,topF[0],topF[2]+.05],[-fw*.6,topF[0],topF[2]+.05],[0,topF[0]+.35,topF[2]+.05]);
   }
 
   // ══ TRAIN
