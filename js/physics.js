@@ -137,18 +137,19 @@ function physStep(dt) {
   let Mn =
       pl.rudder * 1.5 * ctrlEff * yawMul  // gouverne de direction
     - pl.r * 2.5 * ctrlEff                // amortissement en lacet
-    + sideslip * 0.5 * ctrlEff            // stabilité de route (effet girouette)
+    - sideslip * 0.5 * ctrlEff            // stabilité de route (girouette → oppose le dérapage)
     + pl.aileron * 0.25 * ctrlEff         // lacet inverse des ailerons
-    - pl.p * 0.06 * ctrlEff;              // couplage roulis→lacet
+    - pl.p * 0.04 * ctrlEff;              // couplage roulis→lacet
 
   // ── VIRAGE PAR INCLINAISON ────────────────────────────
-  // En vol, l'inclinaison latérale crée un virage coordonné
-  // via la composante latérale de la gravité.
-  // On modélise cela comme un rappel du taux de lacet r
-  // vers le taux de virage coordonné Ω = g·tan(φ)/V
+  // En vol, l'inclinaison crée un virage coordonné via la
+  // composante latérale de la gravité.
+  // Inclinaison GAUCHE (roll > 0) → virage GAUCHE (r < 0)
+  // On rappelle r vers le taux de virage coordonné Ω = −g·tan(φ)/V
   if (!onGround && V > 5) {
-    const coordR = GRAV * Math.tan(pl.roll) / Math.max(10, V * 0.25);
-    Mn += (coordR - pl.r) * 3.0 * ctrlEff;
+    const cosR_safe = Math.max(0.25, Math.abs(Math.cos(pl.roll)));
+    const coordR = -GRAV * Math.sin(pl.roll) / (cosR_safe * Math.max(15, V * 0.25));
+    Mn += clamp((coordR - pl.r) * 3.0 * ctrlEff, -2.0, 2.0);
   }
 
   // ══ INTÉGRATION DES TAUX ANGULAIRES ═══════════════════
@@ -178,9 +179,9 @@ function physStep(dt) {
 
   const qSinR_rCosR = pl.q * sinR + pl.r * cosR;
 
-  const dRoll  = pl.p - qSinR_rCosR * tanP;
-  const dPitch = pl.q * cosR - pl.r * sinR;
-  const dYaw   = qSinR_rCosR / cosP;
+  const dRoll  = clamp(pl.p - qSinR_rCosR * tanP, -4.0, 4.0);
+  const dPitch = clamp(pl.q * cosR - pl.r * sinR, -3.0, 3.0);
+  const dYaw   = clamp(qSinR_rCosR / cosP, -3.0, 3.0);
 
   pl.roll  += dRoll  * dt;
   pl.pitch += dPitch * dt;
@@ -290,13 +291,20 @@ function physStep(dt) {
     const wheelFric   = V * (braking ? 0.18 : 0.015);
     pl.speed = Math.max(0, pl.speed - (airBrake + wheelFric) * dt);
 
-    // Amortissement au sol
+    // Amortissement au sol (fort pour empêcher oscillations)
     pl.roll *= Math.pow(0.86, dt * 60);
     if (V < 65) pl.pitch *= Math.pow(0.95, dt * 60);
-    pl.p *= Math.pow(0.70, dt * 60);
-    pl.q *= Math.pow(0.80, dt * 60);
-    pl.r *= Math.pow(0.85, dt * 60);
+    pl.p *= Math.pow(0.60, dt * 60);
+    pl.q *= Math.pow(0.70, dt * 60);
+    pl.r *= Math.pow(0.75, dt * 60);
   }
 
   pl.z = Math.min(40000, pl.z);
+
+  // ══ PROTECTION NaN ══════════════════════════════════════
+  if (isNaN(pl.speed) || isNaN(pl.x) || isNaN(pl.roll)) {
+    pl.speed = 0; pl.vz = 0;
+    pl.p = 0; pl.q = 0; pl.r = 0;
+    pl.elevator = 0; pl.aileron = 0; pl.rudder = 0;
+  }
 }
