@@ -19,7 +19,14 @@ window.addEventListener('keyup', e => { K[e.code] = false; });
 
 // ── État jeu ──
 let started = false, crashed = false, camMode = 0;
-let pl = { x: 0, y: 0, z: 600, yaw: 0, pitch: 0, roll: 0, speed: 0, throttle: 0, vz: 0 };
+let pl = {
+  x: 0, y: 0, z: 600,
+  yaw: 0, pitch: 0, roll: 0,
+  p: 0, q: 0, r: 0,              // taux angulaires corps (roulis, tangage, lacet)
+  speed: 0, throttle: 0, vz: 0,
+  elevator: 0, aileron: 0, rudder: 0,  // surfaces de contrôle [-1, 1]
+  onGround: false
+};
 const GEAR_H = 4.9, VSCALE = 12;
 
 // ── Constantes physiques (calibrées C172) ──
@@ -41,5 +48,11 @@ const FOG_R = 182, FOG_G = 205, FOG_B = 228;
 // ── Caméra (rempli chaque frame) ──
 let cam = {};
 
-// ── Utilitaire ──
+// ── Utilitaires ──
 function lerp(a, b, t) { return a + (b - a) * Math.max(0, Math.min(1, t)); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function moveToward(cur, tgt, rate) {
+  if (tgt > cur) return Math.min(cur + rate, tgt);
+  if (tgt < cur) return Math.max(cur - rate, tgt);
+  return cur;
+}

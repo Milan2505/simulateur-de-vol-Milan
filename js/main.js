@@ -20,7 +20,14 @@ function resetPlane() {
     ap._gz = Math.max(14, mxH) + 2.5;
   }
   const gz = ap._gz;
-  pl = { x: sx, y: sy, z: gz + GEAR_H, yaw: ap.hdg, pitch: 0, roll: 0, speed: 0, throttle: 0, vz: 0 };
+  pl = {
+    x: sx, y: sy, z: gz + GEAR_H,
+    yaw: ap.hdg, pitch: 0, roll: 0,
+    p: 0, q: 0, r: 0,
+    speed: 0, throttle: 0, vz: 0,
+    elevator: 0, aileron: 0, rudder: 0,
+    onGround: true
+  };
   flaps = 0;
 }
 

@@ -1,183 +1,302 @@
 // ══════════════════════════════════════════════════════════
-// PHYSICS.JS — Moteur physique aérodynamique C172
+// PHYSICS.JS — Moteur aérodynamique 6-DOF Cessna 172
+//
+// Axes corps : X = droite (aile), Y = avant (nez), Z = haut
+// Taux angulaires corps :
+//   p = roulis  (rotation autour de l'axe Y/avant)
+//   q = tangage (rotation autour de l'axe X/droite)
+//   r = lacet   (rotation autour de l'axe Z/haut)
+//
+// Les commandes créent des MOMENTS → changent p, q, r
+// p, q, r → taux d'Euler → changent yaw, pitch, roll
 // ══════════════════════════════════════════════════════════
 
-function update(dt){
-  if(!started||crashed) return;
-  const DT=Math.min(dt,.05);
+function update(dt) {
+  if (!started || crashed) return;
+  const DT = Math.min(dt, 0.05);
+  // Sous-pas pour stabilité numérique
+  const N = Math.max(1, Math.ceil(DT / 0.012));
+  const h = DT / N;
+  for (let i = 0; i < N; i++) physStep(h);
+}
 
-  // ── SOL ─────────────────────────────────────────────
-  const rawGnd=terrainH(pl.x,pl.y);
-  let gnd=rawGnd;
-  let onRunway=false;
-  for(const ap of AIRPORTS){
-    const adx=pl.x-ap.wx, ady=pl.y-ap.wy;
-    const halfLen=ap.len*0.52+10, halfWid=ap.wid*0.5+8;
-    const ca=Math.cos(ap.hdg), sa=Math.sin(ap.hdg);
-    const lx=adx*sa+ady*ca, ly=-adx*ca+ady*sa;
-    if(Math.abs(lx)<halfLen && Math.abs(ly)<halfWid){
-      if(!ap._gz) ap._gz=runwayZ(ap);
-      gnd=ap._gz; onRunway=true; break;
+function physStep(dt) {
+
+  // ══ DÉTECTION DU SOL ══════════════════════════════════
+  const rawGnd = terrainH(pl.x, pl.y);
+  let gnd = rawGnd, onRunway = false;
+  for (const ap of AIRPORTS) {
+    const adx = pl.x - ap.wx, ady = pl.y - ap.wy;
+    const halfLen = ap.len * 0.52 + 10, halfWid = ap.wid * 0.5 + 8;
+    const ca = Math.cos(ap.hdg), sa = Math.sin(ap.hdg);
+    const lx = adx * sa + ady * ca, ly = -adx * ca + ady * sa;
+    if (Math.abs(lx) < halfLen && Math.abs(ly) < halfWid) {
+      if (!ap._gz) ap._gz = runwayZ(ap);
+      gnd = ap._gz; onRunway = true; break;
     }
   }
-  const wheelZ=pl.z-GEAR_H;
-  const onGround=wheelZ<=gnd+0.5;
-  pl.onGround=onGround;
+  const wheelZ = pl.z - GEAR_H;
+  const onGround = wheelZ <= gnd + 0.5;
+  pl.onGround = onGround;
 
-  // ── PRESSION DYNAMIQUE → efficacité contrôles ────────
-  // À basse vitesse, les gouvernes sont peu efficaces
-  const qBar=Math.min(1.5, pl.speed*pl.speed/(80*80)); // normalisé à 1.0 à 80kt
-  const ctrlEff=Math.max(0.15, Math.min(1.2, qBar));   // min 15% même à l'arrêt (trim)
+  // ══ PRESSION DYNAMIQUE & EFFICACITÉ GOUVERNES ═════════
+  const V = pl.speed;
+  const qBar = Math.min(1.5, V * V / (80 * 80));
+  const ctrlEff = Math.max(0.15, Math.min(1.2, qBar));
 
-  // ── CONTRÔLES ───────────────────────────────────────
-  const pitchR=0.55*ctrlEff, rollR=0.75*ctrlEff, yawR=0.28;
-  if(K['ArrowUp'])   pl.pitch=Math.min( 0.75, pl.pitch+pitchR*DT);
-  if(K['ArrowDown']) pl.pitch=Math.max(-0.50, pl.pitch-pitchR*DT);
-  if(!onGround){
-    if(K['ArrowLeft'])  pl.roll=Math.min( Math.PI*.48, pl.roll+rollR*DT);
-    if(K['ArrowRight']) pl.roll=Math.max(-Math.PI*.48, pl.roll-rollR*DT);
+  // ══ SURFACES DE CONTRÔLE (rate-limited) ═══════════════
+  // Les surfaces bougent progressivement vers leur cible
+  // → animation fluide + inertie de commande
+  const sRate = 4.0 * dt;
+
+  // Profondeur (tangage)
+  let eT = 0;
+  if (K['ArrowUp'])   eT =  1;
+  if (K['ArrowDown']) eT = -1;
+  pl.elevator = moveToward(pl.elevator, eT, sRate);
+
+  // Ailerons (roulis) — actifs en vol et à haute vitesse au sol
+  let aT = 0;
+  if (!onGround || V > 25) {
+    if (K['ArrowLeft'])  aT =  1;
+    if (K['ArrowRight']) aT = -1;
   }
-  const yawMul=onGround?3.5:1.0;
-  if(K['KeyQ']||K['KeyA']) pl.yaw+=yawR*yawMul*DT;
-  if(K['KeyE']||K['KeyD']) pl.yaw-=yawR*yawMul*DT;
-  if(K['ShiftLeft']||K['ShiftRight'])    pl.throttle=Math.min(1,pl.throttle+.28*DT);
-  if(K['ControlLeft']||K['ControlRight']) pl.throttle=Math.max(0,pl.throttle-.28*DT);
-  if(K['KeyB']&&onGround) pl.speed=Math.max(0,pl.speed-pl.speed*0.8*DT); // freins au sol
-  if(K['Space']){ pl.pitch*=(1-2.5*DT); pl.roll*=(1-3.0*DT); } // stabiliser progressif
+  pl.aileron = moveToward(pl.aileron, aT, sRate);
 
-  // ── VOLETS ──────────────────────────────────────────
-  // Chaque cran : réduit Vstall de ~5kt, ajoute CL et traînée
-  const flapCL=flaps*0.15;       // bonus portance par cran
-  const flapCD=flaps*flaps*0.008; // traînée augmente quadratiquement
-  const stallSpd=STALL_SPD_CLEAN - flaps*3.2; // ~48, 45, 42, 38 kt
+  // Direction (lacet)
+  let rT = 0;
+  if (K['KeyQ'] || K['KeyA']) rT =  1;
+  if (K['KeyE'] || K['KeyD']) rT = -1;
+  pl.rudder = moveToward(pl.rudder, rT, sRate);
 
-  // ── POUSSÉE ─────────────────────────────────────────
-  // Hélice : efficacité diminue à haute vitesse
-  const propEff=Math.max(0.4, 1.0-pl.speed/320);
-  const thrust=pl.throttle*MAX_THR*propEff;
+  // Gaz
+  if (K['ShiftLeft'] || K['ShiftRight'])
+    pl.throttle = Math.min(1, pl.throttle + 0.28 * dt);
+  if (K['ControlLeft'] || K['ControlRight'])
+    pl.throttle = Math.max(0, pl.throttle - 0.28 * dt);
 
-  // ── ANGLE D'ATTAQUE RÉEL ────────────────────────────
-  // AoA = pitch - angle de trajectoire (flight path angle)
-  const fpa=(pl.speed>5)?Math.atan2(pl.vz, pl.speed*0.20):0;
-  const aoa=pl.pitch-fpa*0.6; // AoA effectif
+  // Freins au sol
+  if (K['KeyB'] && onGround)
+    pl.speed = Math.max(0, pl.speed - pl.speed * 0.8 * dt);
 
-  // ── PORTANCE ────────────────────────────────────────
-  // Décrochage progressif avec buffet
-  const stallMargin=(pl.speed-stallSpd+5)/15; // 0 à stallSpd-5, 1.0 à stallSpd+10
-  const stallFac=Math.max(0, Math.min(1, stallMargin));
-  // Buffet pré-décrochage (oscillation aléatoire)
-  const nearStall=pl.speed<stallSpd+12 && pl.speed>stallSpd-10 && !onGround;
-  const buffet=nearStall?(Math.random()-0.5)*0.015*(1-stallFac):0;
-
-  const aoaFac=(aoa>=0)
-    ? Math.max(0, 1+(aoa+flapCL)*CL_ALPHA)*stallFac
-    : (1+aoa*CL_ALPHA);
-  const cosRoll=Math.max(0.15, Math.cos(pl.roll));
-  const lift=LIFT_K*pl.speed*pl.speed*cosRoll*aoaFac;
-
-  // Portance sol (pour décollage)
-  const liftGnd=LIFT_K*pl.speed*pl.speed*cosRoll
-               *Math.max(0,1+(aoa+flapCL)*CL_ALPHA)*stallFac;
-
-  // ── TRAÎNÉE ─────────────────────────────────────────
-  const nG=1.0/cosRoll;
-  const inducedDrag=aoa*aoa*pl.speed*0.015*nG*nG;
-  const bankDrag=(nG-1.0)*pl.speed*0.035;
-  const profileDrag=0.050*pl.speed+0.00020*pl.speed*pl.speed;
-  const flapDrag=flapCD*pl.speed*pl.speed*0.0003;
-
-  // ── CONSERVATION D'ÉNERGIE ──────────────────────────
-  // Monter coûte de l'énergie cinétique, descendre en rend
-  // ΔV = -g·sin(γ)·dt  (γ = angle de montée)
-  const climbAngle=(pl.speed>5)?Math.asin(Math.max(-1,Math.min(1,pl.vz/(pl.speed*0.20+0.01)))):0;
-  const energyExchange=GRAV*Math.sin(climbAngle)*0.35;
-
-  const totalDrag=profileDrag+inducedDrag+bankDrag+flapDrag;
-  pl.speed=Math.max(0, pl.speed+(thrust-totalDrag+energyExchange)*DT);
-
-  // Vitesse max structurelle (Vne=163kt pour C172, ici ~280 en unités jeu)
-  if(pl.speed>280) pl.speed=280;
-
-  // ── MOUVEMENT HORIZONTAL ─────────────────────────────
-  const cosY=Math.cos(pl.yaw), sinY=Math.sin(pl.yaw);
-  const hSpeed=pl.speed*Math.cos(pl.pitch);
-  pl.x+=sinY*hSpeed*DT*1.75;
-  pl.y+=cosY*hSpeed*DT*1.75;
-
-  // ── VIRAGE COORDONNÉ ────────────────────────────────
-  if(!onGround && pl.speed>5){
-    const turnRate=Math.tan(pl.roll)*9.5/Math.max(20,pl.speed);
-    pl.yaw-=turnRate*DT;
+  // Stabilisateur automatique (Space)
+  if (K['Space']) {
+    pl.p *= (1 - 2.5 * dt);
+    pl.q *= (1 - 2.5 * dt);
+    pl.r *= (1 - 2.0 * dt);
+    pl.pitch *= (1 - 2.5 * dt);
+    pl.roll  *= (1 - 3.0 * dt);
   }
 
-  // ── DYNAMIQUE VERTICALE ─────────────────────────────
-  if(!onGround){
-    // Vz cible basé sur la portance vs gravité + composante pitch
-    const vzFromPitch=pl.speed*Math.sin(pl.pitch)*0.20;
-    const liftAccel=(lift-GRAV)*0.45; // excès ou déficit de portance
+  // ══ VOLETS ════════════════════════════════════════════
+  const flapCL  = flaps * 0.15;
+  const flapCD  = flaps * flaps * 0.008;
+  const stallSpd = STALL_SPD_CLEAN - flaps * 3.2;
 
-    // Convergence INERTIELLE vers le vz cible (tau ~0.8s)
-    // Plus réaliste : l'avion ne change pas de vz instantanément
-    const tau=0.8; // constante de temps en secondes
-    const alpha=1-Math.exp(-DT/tau);
-    const vzTarget=vzFromPitch+liftAccel;
-    pl.vz=pl.vz+(vzTarget-pl.vz)*alpha;
+  // ══ ANGLE D'ATTAQUE ═══════════════════════════════════
+  const fpa = (V > 5) ? Math.atan2(pl.vz, V * 0.20) : 0;
+  const aoa = pl.pitch - fpa * 0.6;
+
+  // Estimation du dérapage (sideslip) depuis le taux de lacet
+  const sideslip = (V > 5) ? Math.atan2(pl.r * 3.0, V) : 0;
+
+  // Buffet pré-décrochage
+  const nearStall = V < stallSpd + 12 && V > stallSpd - 10 && !onGround;
+  const stallInt  = nearStall ? (1 - clamp((V - stallSpd + 5) / 15, 0, 1)) : 0;
+  const buffet    = stallInt * (Math.random() - 0.5) * 0.02;
+
+  // ══════════════════════════════════════════════════════
+  // MOMENTS AÉRODYNAMIQUES → ACCÉLÉRATIONS ANGULAIRES
+  //
+  // C'est le cœur du modèle 6-DOF :
+  // Chaque axe reçoit des couples provenant de :
+  //   1. Commandes de vol (gouvernes)
+  //   2. Amortissement (résiste à la rotation)
+  //   3. Stabilité statique (rappel vers l'équilibre)
+  //   4. Couplages inter-axes (lacet inverse, etc.)
+  // ══════════════════════════════════════════════════════
+
+  // ── TANGAGE (moment autour de X / axe droite) ────────
+  const Mq =
+      pl.elevator * 2.8 * ctrlEff         // profondeur
+    - pl.q * 5.0 * ctrlEff                // amortissement en tangage
+    - aoa * 1.2 * ctrlEff                 // stabilité longitudinale (CG devant CP)
+    + buffet * 0.3                         // buffet de décrochage
+    - flaps * 0.04 * ctrlEff;             // moment piqueur des volets
+
+  // ── ROULIS (moment autour de Y / axe avant) ──────────
+  const Ml =
+      pl.aileron * 3.2 * ctrlEff          // ailerons
+    - pl.p * 4.5 * ctrlEff                // amortissement en roulis
+    - sideslip * 0.8 * ctrlEff            // effet dièdre → stabilité spirale
+    + pl.r * 0.15 * Math.min(1, V * 0.01) * ctrlEff  // couplage lacet→roulis
+    + buffet * 0.5;                        // buffet
+
+  // ── LACET (moment autour de Z / axe haut) ────────────
+  const yawMul = onGround ? 3.5 : 1.0;   // direction au sol plus efficace
+  let Mn =
+      pl.rudder * 1.5 * ctrlEff * yawMul  // gouverne de direction
+    - pl.r * 2.5 * ctrlEff                // amortissement en lacet
+    + sideslip * 0.5 * ctrlEff            // stabilité de route (effet girouette)
+    + pl.aileron * 0.25 * ctrlEff         // lacet inverse des ailerons
+    - pl.p * 0.06 * ctrlEff;              // couplage roulis→lacet
+
+  // ── VIRAGE PAR INCLINAISON ────────────────────────────
+  // En vol, l'inclinaison latérale crée un virage coordonné
+  // via la composante latérale de la gravité.
+  // On modélise cela comme un rappel du taux de lacet r
+  // vers le taux de virage coordonné Ω = g·tan(φ)/V
+  if (!onGround && V > 5) {
+    const coordR = GRAV * Math.tan(pl.roll) / Math.max(10, V * 0.25);
+    Mn += (coordR - pl.r) * 3.0 * ctrlEff;
+  }
+
+  // ══ INTÉGRATION DES TAUX ANGULAIRES ═══════════════════
+  const Ix = 1.0, Iy = 1.2, Iz = 1.5;  // moments d'inertie normalisés
+  pl.q += (Mq / Iy) * dt;   // tangage
+  pl.p += (Ml / Ix) * dt;   // roulis
+  pl.r += (Mn / Iz) * dt;   // lacet
+
+  // Limiter les taux angulaires (sécurité)
+  pl.p = clamp(pl.p, -3.5, 3.5);
+  pl.q = clamp(pl.q, -2.5, 2.5);
+  pl.r = clamp(pl.r, -2.5, 2.5);
+
+  // ══════════════════════════════════════════════════════
+  // ÉQUATIONS CINÉMATIQUES D'EULER
+  //
+  // Convertit les taux angulaires corps (p, q, r)
+  // en taux de variation des angles d'Euler (roll, pitch, yaw)
+  //
+  //   φ̇ = p − (q·sin(φ) + r·cos(φ))·tan(θ)
+  //   θ̇ = q·cos(φ) − r·sin(φ)
+  //   ψ̇ = (q·sin(φ) + r·cos(φ)) / cos(θ)
+  // ══════════════════════════════════════════════════════
+  const sinR = Math.sin(pl.roll),  cosR = Math.cos(pl.roll);
+  const sinP = Math.sin(pl.pitch), cosP = Math.max(0.01, Math.cos(pl.pitch));
+  const tanP = sinP / cosP;
+
+  const qSinR_rCosR = pl.q * sinR + pl.r * cosR;
+
+  const dRoll  = pl.p - qSinR_rCosR * tanP;
+  const dPitch = pl.q * cosR - pl.r * sinR;
+  const dYaw   = qSinR_rCosR / cosP;
+
+  pl.roll  += dRoll  * dt;
+  pl.pitch += dPitch * dt;
+  pl.yaw   += dYaw   * dt;
+
+  // Limites d'attitude
+  pl.pitch = clamp(pl.pitch, -0.50, 0.75);
+  pl.roll  = clamp(pl.roll, -Math.PI * 0.48, Math.PI * 0.48);
+
+  // ══════════════════════════════════════════════════════
+  // FORCES AÉRODYNAMIQUES → VITESSE
+  // ══════════════════════════════════════════════════════
+
+  // ── Poussée ───────────────────────────────────────────
+  const propEff = Math.max(0.4, 1.0 - V / 320);
+  const thrust  = pl.throttle * MAX_THR * propEff;
+
+  // ── Portance ──────────────────────────────────────────
+  const stallMargin = (V - stallSpd + 5) / 15;
+  const stallFac = clamp(stallMargin, 0, 1);
+  const aoaFac = (aoa >= 0)
+    ? Math.max(0, 1 + (aoa + flapCL) * CL_ALPHA) * stallFac
+    : (1 + aoa * CL_ALPHA);
+  const cosRoll = Math.max(0.15, Math.cos(pl.roll));
+  const lift    = LIFT_K * V * V * cosRoll * aoaFac;
+  const liftGnd = LIFT_K * V * V * cosRoll
+                * Math.max(0, 1 + (aoa + flapCL) * CL_ALPHA) * stallFac;
+
+  // ── Traînée ───────────────────────────────────────────
+  const nG = 1.0 / cosRoll;
+  const inducedDrag = aoa * aoa * V * 0.015 * nG * nG;
+  const bankDrag    = (nG - 1.0) * V * 0.035;
+  const profileDrag = 0.050 * V + 0.00020 * V * V;
+  const flapDragF   = flapCD * V * V * 0.0003;
+  const sideDrag    = Math.abs(sideslip) * V * 0.08;  // traînée de dérapage
+  const totalDrag   = profileDrag + inducedDrag + bankDrag + flapDragF + sideDrag;
+
+  // ── Conservation d'énergie ────────────────────────────
+  const climbAng = (V > 5)
+    ? Math.asin(clamp(pl.vz / (V * 0.20 + 0.01), -1, 1)) : 0;
+  const energyEx = GRAV * Math.sin(climbAng) * 0.35;
+
+  // ── Intégration vitesse ───────────────────────────────
+  pl.speed = Math.max(0, V + (thrust - totalDrag + energyEx) * dt);
+  if (pl.speed > 280) pl.speed = 280;
+
+  // ══ MOUVEMENT HORIZONTAL ══════════════════════════════
+  const cosY = Math.cos(pl.yaw), sinY = Math.sin(pl.yaw);
+  const hSpeed = pl.speed * Math.cos(pl.pitch);
+  pl.x += sinY * hSpeed * dt * 1.75;
+  pl.y += cosY * hSpeed * dt * 1.75;
+
+  // ══ DYNAMIQUE VERTICALE ═══════════════════════════════
+  if (!onGround) {
+    // Vz cible = composante pitch + excès/déficit de portance
+    const vzFromPitch = V * Math.sin(pl.pitch) * 0.20;
+    const liftAccel   = (lift - GRAV) * 0.45;
+    const tau   = 0.8;
+    const alpha = 1 - Math.exp(-dt / tau);
+    const vzTgt = vzFromPitch + liftAccel;
+    pl.vz += (vzTgt - pl.vz) * alpha;
 
     // Buffet de décrochage
-    pl.vz+=buffet;
-    pl.pitch+=buffet*0.3;
+    pl.vz += buffet;
 
-    // Effet de sol (<40u) : coussin d'air réduit la descente
-    const hAGL=pl.z-gnd;
-    if(hAGL<40 && hAGL>0){
-      const ge=0.12*(1-hAGL/40)*(1-hAGL/40);
-      pl.vz+=ge*DT*6;
+    // Effet de sol (< 40 unités AGL)
+    const hAGL = pl.z - gnd;
+    if (hAGL < 40 && hAGL > 0) {
+      const ge = 0.12 * (1 - hAGL / 40) * (1 - hAGL / 40);
+      pl.vz += ge * dt * 6;
     }
 
     // Intégration altitude
-    pl.z+=pl.vz*DT*5;
+    pl.z += pl.vz * dt * 5;
 
-    // Stabilité naturelle : retour LENT au trim (pas instantané)
-    // Un vrai avion est stable en tangage (CG devant CP)
-    const pitchStab=0.12*ctrlEff; // plus stable à haute vitesse
-    const rollStab=0.08;
-    pl.pitch+=(0-pl.pitch)*pitchStab*DT; // converge vers 0 (trim)
-    pl.roll+=(0-pl.roll)*rollStab*DT;    // ailes à plat
-
-    // Lacet adverse en roulis (l'aile qui monte traîne plus)
-    if(Math.abs(pl.roll)>0.05 && pl.speed>20){
-      pl.yaw-=pl.roll*0.015*DT*ctrlEff;
-    }
+    // Stabilité résiduelle (faible — le gros est dans les moments)
+    pl.pitch += (0 - pl.pitch) * 0.04 * ctrlEff * dt;
+    pl.roll  += (0 - pl.roll)  * 0.03 * dt;
 
   } else {
-    // ── CONTACT SOL ─────────────────────────────────────
-    if(pl.vz<-3.2){
-      crashed=true; document.getElementById('scr-c').style.display='flex'; return;
+    // ══ CONTACT SOL ═════════════════════════════════════
+    // Crash : impact vertical trop fort
+    if (pl.vz < -3.2) {
+      crashed = true;
+      document.getElementById('scr-c').style.display = 'flex';
+      return;
     }
-    if(Math.abs(pl.roll)>0.48 && pl.speed>28){
-      crashed=true; document.getElementById('scr-c').style.display='flex'; return;
+    // Crash : roulis trop fort à vitesse
+    if (Math.abs(pl.roll) > 0.48 && V > 28) {
+      crashed = true;
+      document.getElementById('scr-c').style.display = 'flex';
+      return;
     }
 
     // Décollage : portance > poids
-    if(liftGnd>GRAV){
-      const liftExcess=liftGnd-GRAV;
-      pl.vz=liftExcess*0.6;
-      pl.z=gnd+GEAR_H+0.6;
+    if (liftGnd > GRAV) {
+      pl.vz = (liftGnd - GRAV) * 0.6;
+      pl.z  = gnd + GEAR_H + 0.6;
     } else {
-      pl.z=gnd+GEAR_H;
-      pl.vz=Math.max(pl.vz*0.5, 0); // amorti au sol, pas reset brutal
+      pl.z  = gnd + GEAR_H;
+      pl.vz = Math.max(pl.vz * 0.5, 0);
     }
 
     // Friction de roulage
-    const braking=K['ControlLeft']||K['ControlRight']||K['KeyB'];
-    const airBrake=(pl.speed>0?profileDrag*0.55:0);
-    const wheelFriction=pl.speed*(braking?0.18:0.015);
-    pl.speed=Math.max(0,pl.speed-(airBrake+wheelFriction)*DT);
+    const braking = K['ControlLeft'] || K['ControlRight'] || K['KeyB'];
+    const airBrake    = V > 0 ? profileDrag * 0.55 : 0;
+    const wheelFric   = V * (braking ? 0.18 : 0.015);
+    pl.speed = Math.max(0, pl.speed - (airBrake + wheelFric) * dt);
 
-    // Roulis → 0, pitch → 0 au sol
-    pl.roll*=Math.pow(0.86,DT*60);
-    if(pl.speed<65) pl.pitch*=Math.pow(0.95,DT*60);
+    // Amortissement au sol
+    pl.roll *= Math.pow(0.86, dt * 60);
+    if (V < 65) pl.pitch *= Math.pow(0.95, dt * 60);
+    pl.p *= Math.pow(0.70, dt * 60);
+    pl.q *= Math.pow(0.80, dt * 60);
+    pl.r *= Math.pow(0.85, dt * 60);
   }
 
-  pl.z=Math.min(40000,pl.z);
+  pl.z = Math.min(40000, pl.z);
 }
