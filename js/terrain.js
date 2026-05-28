@@ -133,10 +133,10 @@ function biomeColor(h, wx, wy, diffuse, fogF, T, nx, ny, nz) {
     if (diffuse < 0.38) { br -= 14; bg -= 5; bb += 18; }
   }
 
-  // AO sur parois raides
+  // AO sur parois raides (adouci pour éviter les bandes trop contrastées)
   if (h > 14) {
     const slope = Math.sqrt(Math.max(0, 1 - nz * nz));
-    const ao = slope * 0.40;
+    const ao = slope * 0.26;
     br *= (1 - ao); bg *= (1 - ao * 0.92); bb *= (1 - ao * 0.82);
   }
 

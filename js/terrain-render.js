@@ -54,7 +54,7 @@ function drawTerrain(T) {
             const vl = Math.sqrt(vx*vx + vy*vy + vz*vz) || 1;
             const hx = SD.x + vx/vl, hy = SD.y + vy/vl, hz = SD.z + vz/vl;
             const hl = Math.sqrt(hx*hx + hy*hy + hz*hz) || 1;
-            const spec = Math.pow(Math.max(0, hz/hl), 38) * 150 * (1 - fog);
+            const spec = Math.pow(Math.max(0, hz/hl), 38) * 100 * (1 - fog);
             wr = Math.min(255, wr + spec * .95); wg = Math.min(255, wg + spec * .97); wb = Math.min(255, wb + spec);
           }
           const wcol = `rgb(${wr|0},${wg|0},${wb|0})`;
@@ -136,7 +136,7 @@ function drawTriangle(A, B, C, T, FAR) {
     const hl = Math.sqrt(hx*hx + hy*hy + hz*hz) || 1;
     const sdot = Math.max(0, (nx*hx + ny*hy + nz*hz) / hl);
     const isWater = avgH < 1.2;
-    const spec = Math.pow(sdot, isWater ? 32 : 16) * (isWater ? 165 : 120) * (1 - fogF);
+    const spec = Math.pow(sdot, isWater ? 32 : 18) * (isWater ? 110 : 75) * (1 - fogF);
     r = Math.min(255, r + spec * .92); g = Math.min(255, g + spec * .96); b = Math.min(255, b + spec);
   }
 

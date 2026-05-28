@@ -402,6 +402,8 @@ function drawTrees(T){
   for(const t of trees){
     const fogF=Math.pow(Math.min(1,t.d/TREE_RANGE),0.7);
     if(fogF>0.95) continue;
+    // Fondu par transparence en distance → évite les points clairs « bruités »
+    ctx.globalAlpha = Math.min(1, 1.2 * (1 - fogF));
 
     const sx=t.base.sx, sy=t.base.sy;
     const topSy=t.top.sy;
@@ -454,6 +456,7 @@ function drawTrees(T){
       ctx.fill();
     }
   }
+  ctx.globalAlpha = 1;
 }
 
 // ══ BÂTIMENTS AÉROPORT ═══════════════════════════════════

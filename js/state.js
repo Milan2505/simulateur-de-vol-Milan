@@ -18,7 +18,10 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => { K[e.code] = false; });
 
 // ── État jeu ──
-let started = false, crashed = false, camMode = 0;
+// camMode : 0=cockpit, 1=poursuite (défaut, fixe à l'avion), 2=latérale, 3=libre (orbite souris)
+let started = false, crashed = false, camMode = 1;
+// Caméra libre : orbite autour de l'avion (angles monde + distance)
+let camOrbit = { yaw: Math.PI, pitch: 0.22, dist: 46 };
 let pl = {
   x: 0, y: 0, z: 600,
   yaw: 0, pitch: 0, roll: 0,

@@ -22,29 +22,23 @@ function projP(lx, ly, lz) {
 }
 
 // ══════════════════════════════════════════════════════════
-// ECLAIRAGE DIRECTIONNEL (Lambert) — donne du volume aux faces
+// ECLAIRAGE DOUX — donne du volume sans creer de facettes
 //
-// Chaque face plate recoit une teinte selon l'orientation de sa
-// normale par rapport au soleil. Les normales sont reorientees
-// vers l'exterieur (heuristique convexe autour d'un centre) car
-// le maillage n'est pas tisse de maniere homogene.
+// On utilise |composante verticale| (lumiere du ciel) + |produit
+// scalaire au soleil|, tous deux en valeur absolue : le resultat
+// ne depend PAS du sens d'enroulement des faces, donc aucune
+// tache/couture incoherente possible. Eclairage volontairement
+// subtil pour rester propre.
 // ══════════════════════════════════════════════════════════
-const _AC_CENTER = [0, 2.0, 0.0];
-
 function shadeFactor(localPts) {
   const ax = localPts[1][0]-localPts[0][0], ay = localPts[1][1]-localPts[0][1], az = localPts[1][2]-localPts[0][2];
   const bx = localPts[2][0]-localPts[0][0], by = localPts[2][1]-localPts[0][1], bz = localPts[2][2]-localPts[0][2];
   let nx = ay*bz-az*by, ny = az*bx-ax*bz, nz = ax*by-ay*bx;
   const nl = Math.sqrt(nx*nx+ny*ny+nz*nz) || 1; nx/=nl; ny/=nl; nz/=nl;
-  // Orienter la normale vers l'exterieur
-  let cx=0, cy=0, cz=0;
-  for (const p of localPts) { cx+=p[0]; cy+=p[1]; cz+=p[2]; }
-  const k = localPts.length; cx/=k; cy/=k; cz/=k;
-  if (nx*(cx-_AC_CENTER[0]) + ny*(cy-_AC_CENTER[1]) + nz*(cz-_AC_CENTER[2]) < 0) { nx=-nx; ny=-ny; nz=-nz; }
-  // Vers le repere monde (meme rotation que les sommets), puis Lambert
   const wn = rotatePt([nx, ny, nz], pl.yaw, pl.pitch, pl.roll);
-  const d = Math.max(0, wn[0]*SD.x + wn[1]*SD.y + wn[2]*SD.z);
-  return 0.58 + 0.47 * d;  // ambiant 0.58 → plein soleil ~1.05
+  const sky = Math.abs(wn[2]);                                  // haut/bas → lumiere du ciel
+  const sun = Math.abs(wn[0]*SD.x + wn[1]*SD.y + wn[2]*SD.z);   // orientation soleil (2 faces)
+  return 0.80 + 0.12 * sky + 0.10 * sun;                        // doux : 0.80 → 1.02
 }
 
 // Applique un facteur de luminosite a une couleur '#rrggbb' ou 'rgba(...)'
@@ -411,11 +405,12 @@ const CESSNA_MESH = (() => {
   }
 
   // ── Feux de navigation (donnees pour le glow) ──
+  // lz au bout d'aile : z_top(0.25) + diedre(0.26) ≈ 0.45 (et non l'ancienne valeur 2.9 = un Y)
   M._navLights = [
-    {lx:-22.0, ly:7.3, lz:2.9+0.26, color:'#ff2020', glow:'rgba(255,40,40,'},
-    {lx: 22.0, ly:7.3, lz:2.9+0.26, color:'#20ff40', glow:'rgba(40,255,60,'},
-    {lx:  0.0, ly:-16.0, lz:-0.42,  color:'#ffffff', glow:'rgba(255,255,255,'},
-    {lx:  0.0, ly:-13.0, lz:7.42,   color:'#ff4040', glow:'rgba(255,80,60,'},
+    {lx:-22.1, ly:7.0, lz:0.45, color:'#ff2020', glow:'rgba(255,40,40,'},   // babord (rouge)
+    {lx: 22.1, ly:7.0, lz:0.45, color:'#20ff40', glow:'rgba(40,255,60,'},   // tribord (vert)
+    {lx:  0.0, ly:-16.0, lz:-0.42, color:'#ffffff', glow:'rgba(255,255,255,'}, // feu de queue
+    {lx:  0.0, ly:-13.0, lz:7.42,  color:'#ff4040', glow:'rgba(255,80,60,'},   // balise sup. derive
   ];
   M._landingLight = {lx:-6.0, ly:8.5, lz:-0.14};
 

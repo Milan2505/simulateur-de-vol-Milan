@@ -74,7 +74,7 @@ function updateHUD(){
   const curStallSpd=STALL_SPD_CLEAN-flaps*3.2;
   document.getElementById('stall').style.display=(pl.speed>8&&pl.speed<curStallSpd+8&&pl.z>80&&!pl.onGround)?'block':'none';
   if(!updateHUD._cm||updateHUD._cm!==camMode){
-    const labels=['COCKPIT','POURSUITE','LATÉRALE'];
+    const labels=['COCKPIT','POURSUITE','LATÉRALE','LIBRE 🖱'];
     document.getElementById('cam-btn').textContent='📷 '+labels[camMode];
     updateHUD._cm=camMode;
   }

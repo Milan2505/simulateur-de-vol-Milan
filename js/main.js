@@ -31,8 +31,30 @@ function resetPlane() {
   flaps = 0;
 }
 
-document.getElementById('cam-btn').addEventListener('click', () => { camMode = (camMode + 1) % 3; });
-window.addEventListener('keydown', e => { if (e.code === 'KeyV') camMode = (camMode + 1) % 3; });
+function cycleCam() {
+  camMode = (camMode + 1) % 4;
+  if (camMode === 3) { camOrbit.yaw = pl.yaw; camOrbit.pitch = 0.22; }  // démarre derrière l'avion
+}
+document.getElementById('cam-btn').addEventListener('click', cycleCam);
+window.addEventListener('keydown', e => { if (e.code === 'KeyV') cycleCam(); });
+
+// ── Contrôle souris de la caméra libre (mode 3) ──
+let _dragCam = false, _lastMX = 0, _lastMY = 0;
+cvs.addEventListener('mousedown', e => {
+  if (camMode === 3) { _dragCam = true; _lastMX = e.clientX; _lastMY = e.clientY; cvs.style.cursor = 'grabbing'; }
+});
+window.addEventListener('mouseup', () => { _dragCam = false; cvs.style.cursor = ''; });
+window.addEventListener('mousemove', e => {
+  if (!_dragCam) return;
+  camOrbit.yaw -= (e.clientX - _lastMX) * 0.006;
+  camOrbit.pitch = clamp(camOrbit.pitch + (e.clientY - _lastMY) * 0.006, -0.35, 1.35);
+  _lastMX = e.clientX; _lastMY = e.clientY;
+});
+cvs.addEventListener('wheel', e => {
+  if (camMode !== 3) return;
+  e.preventDefault();
+  camOrbit.dist = clamp(camOrbit.dist + e.deltaY * 0.05, 12, 220);
+}, { passive: false });
 
 // ── Boucle principale ──
 let lastTs = 0;

@@ -1,0 +1,22 @@
+{
+  // Extensions recommandées pour ce projet (VS Code propose de les installer
+  // automatiquement à l'ouverture du dossier).
+  "recommendations": [
+    // ── Lancer / déboguer le simulateur ──
+    "ritwickdey.LiveServer",          // Serveur local + rechargement auto (sert sur :8080, cf. launch.json)
+    "ms-vscode.live-server",          // Alternative officielle Microsoft (Live Preview intégré)
+
+    // ── Qualité & professionnalisation du code ──
+    "dbaeumer.vscode-eslint",         // Analyse statique : détecte bugs, variables inutilisées, etc.
+    "esbenp.prettier-vscode",         // Formatage automatique cohérent
+    "usernamehw.errorlens",           // Affiche erreurs/avertissements en ligne, directement dans le code
+    "streetsidesoftware.code-spell-checker", // Orthographe (utile pour les commentaires FR)
+    "streetsidesoftware.code-spell-checker-french",
+
+    // ── Productivité / lisibilité ──
+    "wallabyjs.quokka-vscode",        // Évalue le JS en direct (idéal pour tester les calculs maths/géométrie)
+    "oderwat.indent-rainbow",         // Colore l'indentation
+    "naumovs.color-highlight",        // Prévisualise les couleurs (#f0ede2, rgb(...)) dans l'éditeur
+    "wix.vscode-import-cost"          // Coût des imports (si vous passez un jour à des modules ES)
+  ]
+}

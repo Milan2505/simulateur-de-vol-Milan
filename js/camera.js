@@ -6,20 +6,34 @@ function getCam() {
   if (camMode === 0) {
     return { cx: pl.x, cy: pl.y, cz: pl.z + 3.6, cyaw: pl.yaw, cpitch: pl.pitch, croll: pl.roll };
   } else if (camMode === 1) {
-    const behind = 40, above = 12;
+    const behind = 34, above = 8;
     const cosY = Math.cos(pl.yaw), sinY = Math.sin(pl.yaw);
     const cosPi = Math.cos(pl.pitch);
     return {
       cx: pl.x - sinY * behind * cosPi,
       cy: pl.y - cosY * behind * cosPi,
       cz: pl.z + above + Math.sin(pl.pitch) * behind,
-      cyaw: pl.yaw, cpitch: 0, croll: 0
+      cyaw: pl.yaw, cpitch: -0.05, croll: 0
     };
-  } else {
+  } else if (camMode === 2) {
     const perpX = Math.cos(pl.yaw), perpY = -Math.sin(pl.yaw);
     return {
       cx: pl.x + perpX * 65, cy: pl.y + perpY * 65, cz: pl.z + 8,
       cyaw: pl.yaw - Math.PI / 2, cpitch: 0, croll: 0
+    };
+  } else {
+    // Caméra libre : orbite autour de l'avion (contrôlée à la souris)
+    const horiz = Math.cos(camOrbit.pitch) * camOrbit.dist;
+    const cx = pl.x - Math.sin(camOrbit.yaw) * horiz;
+    const cy = pl.y - Math.cos(camOrbit.yaw) * horiz;
+    const cz = pl.z + 3 + Math.sin(camOrbit.pitch) * camOrbit.dist;
+    const tx = pl.x, ty = pl.y, tz = pl.z + 3;
+    const dxy = Math.sqrt((tx - cx) * (tx - cx) + (ty - cy) * (ty - cy)) || 1e-6;
+    return {
+      cx, cy, cz,
+      cyaw: Math.atan2(tx - cx, ty - cy),
+      cpitch: Math.atan2(tz - cz, dxy),
+      croll: 0
     };
   }
 }
