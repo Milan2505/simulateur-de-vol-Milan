@@ -13,6 +13,11 @@ function drawTerrain(T) {
 
   const fX = Math.sin(cam.cyaw), fY = Math.cos(cam.cyaw);
 
+  // Contour de meme couleur sur chaque triangle → supprime les fissures
+  // sous-pixel entre tuiles adjacentes (aspect "craquele")
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1;
+
   for (let ri = 0; ri < RINGS.length; ri++) {
     const { step, nH, maxD } = RINGS[ri];
     const maxD2 = maxD * maxD;
@@ -39,21 +44,32 @@ function drawTerrain(T) {
         // Tuile eau
         if (A.wz < 1 && B.wz < 1 && C.wz < 1 && D.wz < 1) {
           const fog = Math.pow(Math.min(1, Math.sqrt(d2) / FAR), .5);
-          const wr = Math.round(32 * (1 - fog) + FOG_R * fog);
-          const wg = Math.round(72 * (1 - fog) + FOG_G * fog);
-          const wb = Math.round(138 * (1 - fog) + FOG_B * fog);
-          const wcol = `rgb(${wr},${wg},${wb})`;
+          let wr = 32 * (1 - fog) + FOG_R * fog;
+          let wg = 72 * (1 - fog) + FOG_G * fog;
+          let wb = 138 * (1 - fog) + FOG_B * fog;
+          // Reflet du soleil (glitter) — normale de l'eau = (0,0,1)
+          if (fog < 0.85) {
+            const mx = wx0 + step * .5, my = wy0 + step * .5;
+            const vx = cam.cx - mx, vy = cam.cy - my, vz = cam.cz;
+            const vl = Math.sqrt(vx*vx + vy*vy + vz*vz) || 1;
+            const hx = SD.x + vx/vl, hy = SD.y + vy/vl, hz = SD.z + vz/vl;
+            const hl = Math.sqrt(hx*hx + hy*hy + hz*hz) || 1;
+            const spec = Math.pow(Math.max(0, hz/hl), 38) * 150 * (1 - fog);
+            wr = Math.min(255, wr + spec * .95); wg = Math.min(255, wg + spec * .97); wb = Math.min(255, wb + spec);
+          }
+          const wcol = `rgb(${wr|0},${wg|0},${wb|0})`;
           const pA = project(wx0, wy0, 0), pB = project(wx1, wy0, 0);
           const pC = project(wx1, wy1, 0), pD = project(wx0, wy1, 0);
+          ctx.fillStyle = wcol; ctx.strokeStyle = wcol;
           if (pA && pB && pD) {
-            ctx.fillStyle = wcol; ctx.beginPath();
+            ctx.beginPath();
             ctx.moveTo(pA.sx, pA.sy); ctx.lineTo(pB.sx, pB.sy);
-            ctx.lineTo(pD.sx, pD.sy); ctx.closePath(); ctx.fill();
+            ctx.lineTo(pD.sx, pD.sy); ctx.closePath(); ctx.fill(); ctx.stroke();
           }
           if (pB && pC && pD) {
-            ctx.fillStyle = wcol; ctx.beginPath();
+            ctx.beginPath();
             ctx.moveTo(pB.sx, pB.sy); ctx.lineTo(pC.sx, pC.sy);
-            ctx.lineTo(pD.sx, pD.sy); ctx.closePath(); ctx.fill();
+            ctx.lineTo(pD.sx, pD.sy); ctx.closePath(); ctx.fill(); ctx.stroke();
           }
           continue;
         }
@@ -109,13 +125,28 @@ function drawTriangle(A, B, C, T, FAR) {
 
   const fogF = Math.pow(Math.min(1, dist / FAR), .58);
   const avgH = (A.wz + B.wz + C.wz) / 3;
-  const [r, g, b] = biomeColor(avgH, A.wx, A.wy, diffuse, fogF, T, nx, ny, nz);
+  let [r, g, b] = biomeColor(avgH, A.wx, A.wy, diffuse, fogF, T, nx, ny, nz);
+
+  // ── Reflet speculaire : eclat vers le soleil sur la neige et l'eau ──
+  if ((avgH > 430 || avgH < 1.2) && fogF < 0.9) {
+    const mx = (A.wx + B.wx + C.wx) / 3, my = (A.wy + B.wy + C.wy) / 3, mz = (azA + azB + azC) / 3;
+    let vx = cam.cx - mx, vy = cam.cy - my, vz = cam.cz - mz;
+    const vl = Math.sqrt(vx*vx + vy*vy + vz*vz) || 1; vx/=vl; vy/=vl; vz/=vl;
+    const hx = SD.x + vx, hy = SD.y + vy, hz = SD.z + vz;
+    const hl = Math.sqrt(hx*hx + hy*hy + hz*hz) || 1;
+    const sdot = Math.max(0, (nx*hx + ny*hy + nz*hz) / hl);
+    const isWater = avgH < 1.2;
+    const spec = Math.pow(sdot, isWater ? 32 : 16) * (isWater ? 165 : 120) * (1 - fogF);
+    r = Math.min(255, r + spec * .92); g = Math.min(255, g + spec * .96); b = Math.min(255, b + spec);
+  }
 
   ctx.beginPath();
   ctx.moveTo(pA.sx, pA.sy);
   ctx.lineTo(pB.sx, pB.sy);
   ctx.lineTo(pC.sx, pC.sy);
   ctx.closePath();
-  ctx.fillStyle = `rgb(${r},${g},${b})`;
+  ctx.fillStyle = `rgb(${r|0},${g|0},${b|0})`;
   ctx.fill();
+  ctx.strokeStyle = ctx.fillStyle;
+  ctx.stroke();
 }

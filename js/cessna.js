@@ -22,6 +22,49 @@ function projP(lx, ly, lz) {
 }
 
 // ══════════════════════════════════════════════════════════
+// ECLAIRAGE DIRECTIONNEL (Lambert) — donne du volume aux faces
+//
+// Chaque face plate recoit une teinte selon l'orientation de sa
+// normale par rapport au soleil. Les normales sont reorientees
+// vers l'exterieur (heuristique convexe autour d'un centre) car
+// le maillage n'est pas tisse de maniere homogene.
+// ══════════════════════════════════════════════════════════
+const _AC_CENTER = [0, 2.0, 0.0];
+
+function shadeFactor(localPts) {
+  const ax = localPts[1][0]-localPts[0][0], ay = localPts[1][1]-localPts[0][1], az = localPts[1][2]-localPts[0][2];
+  const bx = localPts[2][0]-localPts[0][0], by = localPts[2][1]-localPts[0][1], bz = localPts[2][2]-localPts[0][2];
+  let nx = ay*bz-az*by, ny = az*bx-ax*bz, nz = ax*by-ay*bx;
+  const nl = Math.sqrt(nx*nx+ny*ny+nz*nz) || 1; nx/=nl; ny/=nl; nz/=nl;
+  // Orienter la normale vers l'exterieur
+  let cx=0, cy=0, cz=0;
+  for (const p of localPts) { cx+=p[0]; cy+=p[1]; cz+=p[2]; }
+  const k = localPts.length; cx/=k; cy/=k; cz/=k;
+  if (nx*(cx-_AC_CENTER[0]) + ny*(cy-_AC_CENTER[1]) + nz*(cz-_AC_CENTER[2]) < 0) { nx=-nx; ny=-ny; nz=-nz; }
+  // Vers le repere monde (meme rotation que les sommets), puis Lambert
+  const wn = rotatePt([nx, ny, nz], pl.yaw, pl.pitch, pl.roll);
+  const d = Math.max(0, wn[0]*SD.x + wn[1]*SD.y + wn[2]*SD.z);
+  return 0.58 + 0.47 * d;  // ambiant 0.58 → plein soleil ~1.05
+}
+
+// Applique un facteur de luminosite a une couleur '#rrggbb' ou 'rgba(...)'
+function shadeCol(col, f) {
+  if (col.charCodeAt(0) === 35) { // '#'
+    let r, g, b;
+    if (col.length >= 7) { r=parseInt(col.substr(1,2),16); g=parseInt(col.substr(3,2),16); b=parseInt(col.substr(5,2),16); }
+    else { r=parseInt(col[1]+col[1],16); g=parseInt(col[2]+col[2],16); b=parseInt(col[3]+col[3],16); }
+    return 'rgb(' + Math.min(255,r*f|0) + ',' + Math.min(255,g*f|0) + ',' + Math.min(255,b*f|0) + ')';
+  }
+  const m = col.match(/rgba?\(([^)]+)\)/);
+  if (m) {
+    const p = m[1].split(',');
+    const a = p[3] !== undefined ? p[3].trim() : '1';
+    return 'rgba(' + (Math.min(255,parseFloat(p[0])*f)|0) + ',' + (Math.min(255,parseFloat(p[1])*f)|0) + ',' + (Math.min(255,parseFloat(p[2])*f)|0) + ',' + a + ')';
+  }
+  return col;
+}
+
+// ══════════════════════════════════════════════════════════
 // MESH STATIQUE (pre-calcule une seule fois)
 // ══════════════════════════════════════════════════════════
 const CESSNA_MESH = (() => {
@@ -389,7 +432,8 @@ const CESSNA_MESH = (() => {
 // ══════════════════════════════════════════════════════════
 
 // Projette et ajoute une face au tableau visible[]
-function pushAnimFace(visible, col, pts) {
+// lit=false : pas d'ombrage (ex. disque d'helice translucide)
+function pushAnimFace(visible, col, pts, lit) {
   const ppts = [];
   let sumD = 0;
   for (const p of pts) {
@@ -397,7 +441,8 @@ function pushAnimFace(visible, col, pts) {
     if (!pr) return;
     ppts.push(pr); sumD += pr.d;
   }
-  visible.push({col, ppts, d: sumD / pts.length});
+  const c = (lit === false) ? col : shadeCol(col, shadeFactor(pts));
+  visible.push({col: c, ppts, d: sumD / pts.length});
 }
 
 // ── AILERONS ────────────────────────────────────────────
@@ -614,12 +659,12 @@ function addPropeller(visible) {
         [0,PY,0],
         [Math.cos(a0)*PR,PY,Math.sin(a0)*PR],
         [Math.cos(a1)*PR,PY,Math.sin(a1)*PR]
-      ]);
+      ], false);
       pushAnimFace(visible, `rgba(50,42,32,${a*.5})`, [
         [0,PY,0],
         [Math.cos(a0)*PR*.6,PY,Math.sin(a0)*PR*.6],
         [Math.cos(a1)*PR*.6,PY,Math.sin(a1)*PR*.6]
-      ]);
+      ], false);
     }
   }
 
@@ -662,7 +707,7 @@ function drawCessna() {
       ppts.push(pr); sumD += pr.d;
     }
     if (ppts.length === v.length)
-      visible.push({col, ppts, d: sumD / v.length});
+      visible.push({col: shadeCol(col, shadeFactor(v)), ppts, d: sumD / v.length});
   });
 
   // 2. Surfaces de controle animees
@@ -676,6 +721,8 @@ function drawCessna() {
 
   // 4. Tri back→front (painter's algorithm)
   visible.sort((a, b) => b.d - a.d);
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1;
   visible.forEach(({col, ppts, alpha}) => {
     if (alpha !== undefined) ctx.globalAlpha = alpha;
     ctx.beginPath();
@@ -683,6 +730,8 @@ function drawCessna() {
     for (let i = 1; i < ppts.length; i++) ctx.lineTo(ppts[i].sx, ppts[i].sy);
     ctx.closePath();
     ctx.fillStyle = col; ctx.fill();
+    // Contour de meme couleur → ferme les fissures entre faces (sauf translucides)
+    if (col.charCodeAt(3) !== 97) { ctx.strokeStyle = col; ctx.stroke(); }
     if (alpha !== undefined) ctx.globalAlpha = 1;
   });
 
