@@ -19,6 +19,12 @@ function drawTrees(T){
   const n=Math.ceil(TREE_RANGE/TREE_STEP);
   const fX=Math.sin(cam.cyaw), fY=Math.cos(cam.cyaw);
 
+  // Aéroports proches → exclure les arbres de leur emprise (onAirportArea défini dans airports.js)
+  const apNear=AIRPORTS.filter(ap=>{
+    const dx=ap.wx-pl.x, dy=ap.wy-pl.y, rng=TREE_RANGE+ap.len;
+    return dx*dx+dy*dy < rng*rng;
+  });
+
   const trees=[];
   for(let r=-n;r<=n;r++){
     for(let c=-n;c<=n;c++){
@@ -42,6 +48,7 @@ function drawTrees(T){
       const twx=wx+offX, twy=wy+offY;
       const th=terrainH(twx,twy);
       if(th<20||th>290) continue;
+      if(apNear.length && onAirportArea(twx,twy,apNear)) continue; // pas d'arbres sur les pistes
 
       // Tree size varies
       const treeH=3.5+((hash>>16)%100)*0.055;
@@ -66,6 +73,8 @@ function drawTrees(T){
   for(const t of trees){
     const fogF=Math.pow(Math.min(1,t.d/TREE_RANGE),0.7);
     if(fogF>0.95) continue;
+    // Fondu par transparence en distance → évite les points clairs « bruités »
+    ctx.globalAlpha = Math.min(1, 1.2 * (1 - fogF));
 
     const sx=t.base.sx, sy=t.base.sy;
     const topSy=t.top.sy;
@@ -118,4 +127,5 @@ function drawTrees(T){
       ctx.fill();
     }
   }
+  ctx.globalAlpha = 1;
 }

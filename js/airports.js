@@ -59,6 +59,24 @@ function drawFlatQuad(col, p1,p2,p3,p4, fogF){
   ctx.fillStyle=col; ctx.fill();
 }
 
+// ── Désignateur de piste : vrais chiffres peints au sol (afficheur 7 segments) ──
+// Segments :  aaa / f b / ggg / e c / ddd
+const _RWY_SEG = {'0':'abcdef','1':'bc','2':'abged','3':'abgcd','4':'fgbc','5':'afgcd','6':'afgecd','7':'abc','8':'abcdefg','9':'abcdfg'};
+function paintDigit(ch, cx, cy, ax, ay, vx, vy, hu, wd, t, z, col, fogF){
+  if(!_RWY_SEG[ch]) return;
+  const h=wd/2;
+  const segs={
+    a:[hu-t,hu,-h,h], g:[hu/2-t/2,hu/2+t/2,-h,h], d:[0,t,-h,h],
+    f:[hu/2,hu,-h,-h+t], b:[hu/2,hu,h-t,h],
+    e:[0,hu/2,-h,-h+t], c:[0,hu/2,h-t,h]
+  };
+  const pt=(u,v)=>[cx+ax*u+vx*v, cy+ay*u+vy*v, z];
+  for(const s of _RWY_SEG[ch]){
+    const r=segs[s];
+    drawFlatQuad(col, pt(r[0],r[2]), pt(r[1],r[2]), pt(r[1],r[3]), pt(r[0],r[3]), fogF);
+  }
+}
+
 function drawAirports(){
   const FAR=12000;
   AIRPORTS.forEach(ap=>{
@@ -247,20 +265,32 @@ function drawAirports(){
     const wz=z+0.2; // blanc légèrement au-dessus de l'asphalte
     const wv=Math.round(240*lite);
     const white=`rgba(${wv},${wv},${wv},0.92)`;
-    const yellow=`rgba(${Math.round(230*lite)},${Math.round(200*lite)},${Math.round(30*lite)},0.88)`;
 
-    // ── 2. Ligne centrale (pointillés jaunes)
+    // ── 2. Ligne centrale (pointillés BLANCS, partie centrale seulement) ──
     const dashN=Math.floor(ap.len/28);
     const dashL=ap.len/dashN, dashOn=dashL*0.55;
-    const lw=ap.wid*0.045; // demi-largeur trait
+    const lw=ap.wid*0.035; // demi-largeur trait
     for(let i=0;i<dashN;i++){
       const t0=(i/dashN-.5)*ap.len;
+      if(Math.abs(t0+dashOn*0.5) > ap.len*0.34) continue; // laisse la place aux chiffres/visée
       const t1=t0+dashOn;
       const lx0=ap.wx+cx*t0, ly0=ap.wy+cy*t0;
       const lx1=ap.wx+cx*t1, ly1=ap.wy+cy*t1;
-      drawFlatQuad(yellow,
+      drawFlatQuad(white,
         [lx0+px*lw, ly0+py*lw, wz],[lx0-px*lw, ly0-py*lw, wz],
         [lx1-px*lw, ly1-py*lw, wz],[lx1+px*lw, ly1+py*lw, wz], fogF);
+    }
+
+    // ── 2b. Lignes de bord continues ──
+    {
+      const edgeV=hw-ap.wid*0.05, ew=ap.wid*0.025;
+      for(let sd=-1;sd<=1;sd+=2){
+        drawFlatQuad(white,
+          [ap.wx+cx*hl+px*(edgeV*sd+ew), ap.wy+cy*hl+py*(edgeV*sd+ew), wz],
+          [ap.wx+cx*hl+px*(edgeV*sd-ew), ap.wy+cy*hl+py*(edgeV*sd-ew), wz],
+          [ap.wx-cx*hl+px*(edgeV*sd-ew), ap.wy-cy*hl+py*(edgeV*sd-ew), wz],
+          [ap.wx-cx*hl+px*(edgeV*sd+ew), ap.wy-cy*hl+py*(edgeV*sd+ew), wz], fogF);
+      }
     }
 
     // ── 3. Seuils de piste (barres blanches transversales)
@@ -283,24 +313,37 @@ function drawAirports(){
       }
     }
 
-    // ── 4. Numéros de piste (bandes en croix simulées, 2 extrémités)
-    const numW=hw*0.35, numH=ap.len*0.055;
-    for(let s=-1;s<=1;s+=2){
-      const tx=ap.wx + cx*(hl*s*0.75);
-      const ty=ap.wy + cy*(hl*s*0.75);
-      // Croix stylisée représentant le chiffre
-      // Barre horizontale
-      drawFlatQuad(white,
-        [tx+px*numW+cx*numH*.2, ty+py*numW+cy*numH*.2, wz],
-        [tx-px*numW+cx*numH*.2, ty-py*numW+cy*numH*.2, wz],
-        [tx-px*numW-cx*numH*.2, ty-py*numW-cy*numH*.2, wz],
-        [tx+px*numW-cx*numH*.2, ty+py*numW-cy*numH*.2, wz], fogF);
-      // Barre verticale
-      drawFlatQuad(white,
-        [tx+px*numH*.2+cx*numH*.6, ty+py*numH*.2+cy*numH*.6, wz],
-        [tx-px*numH*.2+cx*numH*.6, ty-py*numH*.2+cy*numH*.6, wz],
-        [tx-px*numH*.2-cx*numH*.6, ty-py*numH*.2-cy*numH*.6, wz],
-        [tx+px*numH*.2-cx*numH*.6, ty+py*numH*.2-cy*numH*.6, wz], fogF);
+    // ── 4. Désignateur de piste : vrais chiffres aux deux seuils ──
+    const degR=((ap.hdg*180/Math.PI)%360+360)%360;
+    const wd=ap.wid*0.24, hu=ap.wid*0.62, td=wd*0.30, gap=wd*1.5;
+    for(let se=-1;se<=1;se+=2){
+      const heading = se<0 ? degR : (degR+180)%360;
+      let num=Math.round(heading/10); if(num<=0) num+=36; if(num>36) num-=36;
+      const str=String(num).padStart(2,'0');
+      const alongPos=se*(hl-ap.len*0.17);
+      const txc=ap.wx+cx*alongPos, tyc=ap.wy+cy*alongPos;
+      const ux=-se*cx, uy=-se*cy;      // « haut » du chiffre → vers l'intérieur
+      const vX=se*px, vY=se*py;         // « droite » lue depuis l'approche (px=-cy, py=cx)
+      for(let di=0;di<2;di++){
+        const voff=(di-0.5)*gap;
+        paintDigit(str[di], txc+vX*voff, tyc+vY*voff, ux,uy, vX,vY, hu, wd, td, wz, white, fogF);
+      }
+    }
+
+    // ── 4b. Points de visée (deux barres épaisses près de chaque seuil) ──
+    {
+      const aimAlong=hl*0.46, aimLen=ap.len*0.05, aimW=ap.wid*0.09, aimOff=ap.wid*0.17;
+      for(let se=-1;se<=1;se+=2){
+        const ax2=ap.wx+cx*se*aimAlong, ay2=ap.wy+cy*se*aimAlong;
+        for(let sd=-1;sd<=1;sd+=2){
+          const bx=ax2+px*aimOff*sd, by=ay2+py*aimOff*sd;
+          drawFlatQuad(white,
+            [bx+px*aimW+cx*aimLen, by+py*aimW+cy*aimLen, wz],
+            [bx-px*aimW+cx*aimLen, by-py*aimW+cy*aimLen, wz],
+            [bx-px*aimW-cx*aimLen, by-py*aimW-cy*aimLen, wz],
+            [bx+px*aimW-cx*aimLen, by+py*aimW-cy*aimLen, wz], fogF);
+        }
+      }
     }
 
     // ── 5. Feux de bord de piste (points rouges/blancs)
@@ -338,126 +381,22 @@ function drawAirports(){
   });
 }
 
-// ══ ARBRES PROCÉDURAUX ═══════════════════════════════════
-// Arbres rendus comme triangles simples près de la caméra
-// Placement déterministe par hash de position → stable frame à frame
-function treeHash(x,y){
-  let h=x*374761393+y*668265263;
-  h=(h^(h>>13))*1274126177;
-  return(h^(h>>16))&0x7fffffff;
+// ══ EMPRISE PISTE — utilisé par drawTrees() (défini dans trees.js) ═══
+// Vrai si le point (wx,wy) est sur l'emprise d'une piste (piste + talus + marge)
+// → empêche les arbres de pousser sur les aéroports
+function onAirportArea(wx, wy, aps){
+  for(const ap of aps){
+    const dx=wx-ap.wx, dy=wy-ap.wy;
+    const ax=Math.sin(ap.hdg), ay=Math.cos(ap.hdg);
+    const along = dx*ax + dy*ay;        // le long de l'axe de piste
+    const across = -dx*ay + dy*ax;      // perpendiculaire
+    if(Math.abs(along) < ap.len*0.5 + 40 && Math.abs(across) < ap.wid*2.4 + 18) return true;
+  }
+  return false;
 }
 
-function drawTrees(T){
-  const TREE_RANGE=420;  // distance max de rendu
-  const TREE_STEP=18;    // grille d'échantillonnage
-  const ox=Math.round(pl.x/TREE_STEP)*TREE_STEP;
-  const oy=Math.round(pl.y/TREE_STEP)*TREE_STEP;
-  const n=Math.ceil(TREE_RANGE/TREE_STEP);
-  const fX=Math.sin(cam.cyaw), fY=Math.cos(cam.cyaw);
-
-  const trees=[];
-  for(let r=-n;r<=n;r++){
-    for(let c=-n;c<=n;c++){
-      const wx=ox+c*TREE_STEP, wy=oy+r*TREE_STEP;
-      const dx=wx-pl.x, dy=wy-pl.y;
-      const d2=dx*dx+dy*dy;
-      if(d2>TREE_RANGE*TREE_RANGE) continue;
-      if(dx*fX+dy*fY < -TREE_STEP*2) continue; // behind camera
-
-      const h=terrainH(wx,wy);
-      // Trees only in forest/prairie biomes (h 25-280)
-      if(h<25||h>280) continue;
-
-      const hash=treeHash(wx,wy);
-      const density=(h>100&&h<220)?0.65:(h>32&&h<100)?0.40:0.20;
-      if((hash%1000)/1000>density) continue;
-
-      // Offset position within cell for variety
-      const offX=((hash>>4)%100-50)*0.28;
-      const offY=((hash>>10)%100-50)*0.28;
-      const twx=wx+offX, twy=wy+offY;
-      const th=terrainH(twx,twy);
-      if(th<20||th>290) continue;
-
-      // Tree size varies
-      const treeH=3.5+((hash>>16)%100)*0.055;
-      const treeW=treeH*0.45;
-      const trunkH=treeH*0.30;
-
-      // Is it conifer or deciduous?
-      const isConifer=(h>140)||((hash>>20)%3===0);
-
-      const base=project(twx,twy,th);
-      const top=project(twx,twy,th+treeH);
-      if(!base||!top) continue;
-      if(base.d<8||base.d>TREE_RANGE) continue; // trop proche = artefacts
-
-      trees.push({twx,twy,th,treeH,treeW,trunkH,isConifer,base,top,d:base.d});
-    }
-  }
-
-  // Sort back to front
-  trees.sort((a,b)=>b.d-a.d);
-
-  for(const t of trees){
-    const fogF=Math.pow(Math.min(1,t.d/TREE_RANGE),0.7);
-    if(fogF>0.95) continue;
-    // Fondu par transparence en distance → évite les points clairs « bruités »
-    ctx.globalAlpha = Math.min(1, 1.2 * (1 - fogF));
-
-    const sx=t.base.sx, sy=t.base.sy;
-    const topSy=t.top.sy;
-    const scaleH=Math.abs(sy-topSy);
-    const scaleW=scaleH*0.45;
-
-    if(scaleH<2) continue;
-
-    const trunkBot=sy;
-    const trunkTop=sy-(scaleH*0.30);
-    const trunkW=Math.max(1,scaleW*0.15);
-
-    // Trunk
-    const trunkR=Math.round(lerp(72,FOG_R,fogF));
-    const trunkG=Math.round(lerp(50,FOG_G,fogF));
-    const trunkB=Math.round(lerp(30,FOG_B,fogF));
-    ctx.fillStyle=`rgb(${trunkR},${trunkG},${trunkB})`;
-    ctx.fillRect(sx-trunkW/2, trunkTop, trunkW, trunkBot-trunkTop);
-
-    // Canopy
-    if(t.isConifer){
-      // Conifer: triangle
-      const gr=Math.round(lerp(28+((t.twx*7)&15),FOG_R,fogF));
-      const gg=Math.round(lerp(68+((t.twy*11)&15),FOG_G,fogF));
-      const gb=Math.round(lerp(22,FOG_B,fogF));
-      ctx.fillStyle=`rgb(${gr},${gg},${gb})`;
-      ctx.beginPath();
-      ctx.moveTo(sx, topSy);
-      ctx.lineTo(sx-scaleW*0.5, trunkTop+scaleH*0.08);
-      ctx.lineTo(sx+scaleW*0.5, trunkTop+scaleH*0.08);
-      ctx.closePath();
-      ctx.fill();
-    } else {
-      // Deciduous: rounded blob (ellipse approximation with circle)
-      const cr=scaleW*0.55, cy2=trunkTop-cr*0.3;
-      const gr=Math.round(lerp(42+((t.twx*13)&15),FOG_R,fogF));
-      const gg=Math.round(lerp(95+((t.twy*7)&20),FOG_G,fogF));
-      const gb=Math.round(lerp(18,FOG_B,fogF));
-      ctx.fillStyle=`rgb(${gr},${gg},${gb})`;
-      ctx.beginPath();
-      ctx.ellipse(sx, cy2, cr, cr*1.1, 0, 0, Math.PI*2);
-      ctx.fill();
-      // Highlight
-      const hr=Math.round(lerp(62+((t.twx*3)&10),FOG_R,fogF));
-      const hg=Math.round(lerp(118+((t.twy*5)&12),FOG_G,fogF));
-      const hb=Math.round(lerp(28,FOG_B,fogF));
-      ctx.fillStyle=`rgba(${hr},${hg},${hb},0.5)`;
-      ctx.beginPath();
-      ctx.ellipse(sx-cr*0.2, cy2-cr*0.25, cr*0.55, cr*0.55, 0, 0, Math.PI*2);
-      ctx.fill();
-    }
-  }
-  ctx.globalAlpha = 1;
-}
+// NB : drawTrees() est défini dans trees.js (chargé après ce fichier).
+// Il appelle onAirportArea() ci-dessus pour ne pas planter d'arbres sur les pistes.
 
 // ══ BÂTIMENTS AÉROPORT ═══════════════════════════════════
 // Hangars et tour de contrôle près de chaque piste

@@ -58,6 +58,18 @@ function shadeCol(col, f) {
   return col;
 }
 
+// Stations de la dérive verticale [z, y_bord_attaque, y_bord_fuite]
+// Partagées entre la partie fixe (mesh) et la gouverne animée (addRudder)
+const VTAIL = [
+  [-0.80,  -9.8, -16.2],
+  [ 1.20, -10.2, -16.1],
+  [ 3.20, -10.9, -15.8],
+  [ 5.20, -11.8, -15.3],
+  [ 6.80, -12.8, -14.8],
+  [ 7.45, -13.3, -14.2],
+];
+const VTAIL_HF = 0.58;  // charnière à 58 % de la corde
+
 // ══════════════════════════════════════════════════════════
 // MESH STATIQUE (pre-calcule une seule fois)
 // ══════════════════════════════════════════════════════════
@@ -73,10 +85,10 @@ const CESSNA_MESH = (() => {
   // Couleurs
   const W  = '#f0ede2', W2 = '#dedad0', W3 = '#c4c0b5', W4 = '#b0aca0';
   const MT = '#6a6258', MT2 = '#48423c';
-  const GL = '#96d2ea', GL2 = '#6eb8d2';
+  const GL = '#6ea4c4', GL2 = '#4d7c98';  // verre teinté foncé → vitres bien lisibles
   const RD = '#c41818';
   const GY = '#888070', GK = '#48423a';
-  const TY = '#181410', HB = '#888078';
+  const TY = '#202024', HB = '#b0aaa0';  // pneu noir, moyeu métallique clair
 
   // ── Helpers geometrie ──
   function gBox(col, x1, y1, z1, x2, y2, z2, w) {
@@ -86,7 +98,7 @@ const CESSNA_MESH = (() => {
     quad(col, [x1+w,y1,z1-w],[x2+w,y2,z2-w],[x2+w,y2,z2+w],[x1+w,y1,z1+w]);
   }
   function gWheel(ct, ch, x, y, z, r, rw) {
-    const N = 12, hr = r * .5;
+    const N = 16, hr = r * .5;
     for (let i = 0; i < N; i++) {
       const a0 = i/N*Math.PI*2, a1 = (i+1)/N*Math.PI*2;
       const y0 = Math.cos(a0)*r, z0 = Math.sin(a0)*r;
@@ -109,13 +121,15 @@ const CESSNA_MESH = (() => {
   // CAPOT MOTEUR — y: 13.5 → 19.8
   // ═══════════════════════════════════════════════════════
   {
+    // cza remonté de +2.0 : le capot était centré ~2u trop bas par rapport
+    // au fuselage (centre ≈ 0.4) et au moyeu d'hélice (z ≈ 0) → « nez décalé »
     const S = [
-      [13.5,1.22,1.30,-2.05],
-      [14.5,1.28,1.36,-2.08],
-      [15.8,1.30,1.40,-2.10],
-      [17.0,1.20,1.28,-2.08],
-      [18.4,0.98,1.05,-2.05],
-      [19.6,0.62,0.65,-2.02],
+      [13.5,1.22,1.30,-0.05],
+      [14.5,1.28,1.36,-0.08],
+      [15.8,1.30,1.40,-0.10],
+      [17.0,1.20,1.28,-0.08],
+      [18.4,0.98,1.05,-0.05],
+      [19.6,0.62,0.65,-0.02],
     ];
     const N = 12;
     for (let s = 0; s < S.length - 1; s++) {
@@ -138,9 +152,9 @@ const CESSNA_MESH = (() => {
         [Math.cos(a0)*rxf,yf,czf+Math.sin(a0)*rzf],
         [Math.cos(a1)*rxf,yf,czf+Math.sin(a1)*rzf]);
     }
-    quad('#282420',[-.55,19.2,-2.60],[.55,19.2,-2.60],[.50,18.0,-2.62],[-.50,18.0,-2.62]);
-    gBox('#484040',1.10,15.5,-2.80,1.10,17.5,-2.85,0.08);
-    gBox('#484040',1.10,15.5,-3.00,1.10,17.2,-3.05,0.08);
+    quad('#282420',[-.55,19.2,-0.60],[.55,19.2,-0.60],[.50,18.0,-0.62],[-.50,18.0,-0.62]);
+    gBox('#484040',1.10,15.5,-0.80,1.10,17.5,-0.85,0.08);
+    gBox('#484040',1.10,15.5,-1.00,1.10,17.2,-1.05,0.08);
   }
 
   // ═══════════════════════════════════════════════════════
@@ -329,54 +343,62 @@ const CESSNA_MESH = (() => {
   // DERIVE VERTICALE — partie FIXE (sans gouverne)
   // ═══════════════════════════════════════════════════════
   {
-    const fw = 0.23;
-    const F = [
-      [-10.0,-15.0,-0.82],
-      [-10.2,-15.6, 0.65],
-      [-10.6,-15.9, 2.55],
-      [-11.5,-15.8, 4.85],
-      [-12.3,-15.0, 6.60],
-      [-13.0,-13.8, 7.42],
-      [-13.3,-12.4, 7.20],
-    ];
-    for (let i = 0; i < F.length-1; i++) {
-      const [ya0,yb0,z0]=F[i],[ya1,yb1,z1]=F[i+1];
-      quad(W, [fw,ya0,z0],[fw,ya1,z1],[-fw,ya1,z1],[-fw,ya0,z0]);
-      quad(W2,[-fw,ya0,z0],[-fw,ya1,z1],[fw,ya1,z1],[fw,ya0,z0]);
+    const fw = 0.16;  // demi-épaisseur (dérive fine et pleine)
+    // Partie FIXE : bord d'attaque → charnière (surface pleine, plus de trou)
+    for (let i = 0; i < VTAIL.length-1; i++) {
+      const [z0,le0,te0] = VTAIL[i], [z1,le1,te1] = VTAIL[i+1];
+      const h0 = le0 - VTAIL_HF*(le0-te0), h1 = le1 - VTAIL_HF*(le1-te1);
+      quad(W,  [fw,le0,z0],[fw,h0,z0],[fw,h1,z1],[fw,le1,z1]);      // flanc droit
+      quad(W2, [-fw,le0,z0],[-fw,le1,z1],[-fw,h1,z1],[-fw,h0,z0]);  // flanc gauche
+      quad(W,  [fw,le0,z0],[fw,le1,z1],[-fw,le1,z1],[-fw,le0,z0]);  // bord d'attaque
     }
-    tri(W,[fw,F[6][0],F[6][2]],[-fw,F[6][0],F[6][2]],[0,F[6][0]-0.5,F[6][2]-0.4]);
-    // Bandes rouges
-    for (let i = 2; i < F.length-1; i++) {
-      const [ya0,,z0]=F[i],[ya1,,z1]=F[i+1];
-      const za=z0*0.20+0.55, zb=z0*0.52, zc=z1*0.20+0.55, zd=z1*0.52;
-      if (zb>za+0.10) quad(RD,[fw+.02,ya0,za],[fw+.02,ya1,zc],[fw+.02,ya1,zd],[fw+.02,ya0,zb]);
+    // Sommet fermé
+    {
+      const [z,le,te] = VTAIL[VTAIL.length-1]; const h = le - VTAIL_HF*(le-te);
+      quad(W2,[fw,le,z],[fw,h,z],[-fw,h,z],[-fw,le,z]);
     }
-    tri('#ff4040',[fw*.6,F[5][0],F[5][2]+.05],[-fw*.6,F[5][0],F[5][2]+.05],[0,F[5][0]+.35,F[5][2]+.05]);
+    // Bande rouge de livrée (partie haute, vers la charnière)
+    for (let i = 2; i < VTAIL.length-1; i++) {
+      const [z0,le0,te0] = VTAIL[i], [z1,le1,te1] = VTAIL[i+1];
+      const h0 = le0 - VTAIL_HF*(le0-te0), h1 = le1 - VTAIL_HF*(le1-te1);
+      const ra0=le0*0.42+h0*0.58, rb0=le0*0.08+h0*0.92;
+      const ra1=le1*0.42+h1*0.58, rb1=le1*0.08+h1*0.92;
+      quad(RD,[ fw+.02,ra0,z0],[ fw+.02,ra1,z1],[ fw+.02,rb1,z1],[ fw+.02,rb0,z0]);
+      quad(RD,[-fw-.02,ra0,z0],[-fw-.02,rb0,z0],[-fw-.02,rb1,z1],[-fw-.02,ra1,z1]);
+    }
   }
 
   // ═══════════════════════════════════════════════════════
   // TRAIN D'ATTERRISSAGE
   // ═══════════════════════════════════════════════════════
-  gBox(GY, 0,16.5,-1.52, 0,16.5,-2.70,0.13);
-  gBox(GY,-0.28,16.5,-2.58,-0.28,16.5,-3.25,0.07);
-  gBox(GY, 0.28,16.5,-2.58, 0.28,16.5,-3.25,0.07);
-  gWheel(TY,HB, 0,16.5,-3.58, 0.45,0.16);
-  gBox(GY,-1.72,4.2,-1.60,-3.45,4.0,-2.82,0.16);
-  gWheel(TY,HB,-3.45,4.0,-3.28, 0.76,0.25);
-  gBox(GY, 1.72,4.2,-1.60, 3.45,4.0,-2.82,0.16);
-  gWheel(TY,HB, 3.45,4.0,-3.28, 0.76,0.25);
+  // Train avant : jambe fine + petite roue
+  gBox(MT2, 0,16.5,-1.50, 0,16.5,-2.65,0.10);
+  gBox(GK,-0.24,16.5,-2.60,-0.24,16.5,-3.10,0.05);
+  gBox(GK, 0.24,16.5,-2.60, 0.24,16.5,-3.10,0.05);
+  gWheel(TY,HB, 0,16.5,-3.34, 0.38,0.14);
 
-  // Carenages roues
+  // Train principal : jambe ressort acier (sombre) + roue + carénage blanc
+  gBox(MT2,-0.5,4.0,-1.42,-2.8,4.0,-3.02,0.11);
+  gBox(MT2, 0.5,4.0,-1.42, 2.8,4.0,-3.02,0.11);
+  gWheel(TY,HB,-2.8,4.0,-3.34, 0.50,0.20);
+  gWheel(TY,HB, 2.8,4.0,-3.34, 0.50,0.20);
+
+  // Carénage de roue (« speed pant ») : petite goutte d'eau blanche
   function pant(s) {
-    const x1=s*2.50,x2=s*4.20,yF=5.8,yR=2.2,zT=-1.60,zB=-4.12;
-    quad(W2,[x1,yF,zT],[x2,yF,zT],[x2,yR,zT],[x1,yR,zT]);
-    quad(GY,[x1,yF,zB],[x1,yR,zB],[x2,yR,zB],[x2,yF,zB]);
-    tri(W2,[x1,yF,zT],[x2,yF,zT],[x1,yF,zB]);
-    tri(W2,[x2,yF,zT],[x2,yF,zB],[x1,yF,zB]);
-    tri(W3,[x1,yR,zT],[x1,yR,zB],[x2,yR,zT]);
-    tri(W3,[x1,yR,zB],[x2,yR,zB],[x2,yR,zT]);
-    quad(W2,[x1,yF,zT],[x1,yR,zT],[x2,yR,zT],[x2,yF,zT]);
-    quad(GY,[x1,yF,zB],[x2,yF,zB],[x2,yR,zB],[x1,yR,zB]);
+    const xc = s*2.8, w = 0.30;
+    const yF = 5.0, yR = 2.9, yM = (yF+yR)/2;   // pointe avant / arrière
+    const zT = -2.62, zB = -3.96, zM = (zT+zB)/2;
+    // Profil losange (y,z), sens horaire : avant, haut, arrière, bas
+    const P = [[yF,zM],[yM,zT],[yR,zM],[yM,zB]];
+    for (let i = 0; i < 4; i++) {
+      const a = P[i], b = P[(i+1)%4];
+      quad(i < 2 ? W : W3, [xc-w,a[0],a[1]],[xc+w,a[0],a[1]],[xc+w,b[0],b[1]],[xc-w,b[0],b[1]]);
+    }
+    // Flancs gauche/droit
+    tri(W2,[xc+w,P[0][0],P[0][1]],[xc+w,P[1][0],P[1][1]],[xc+w,P[2][0],P[2][1]]);
+    tri(W2,[xc+w,P[0][0],P[0][1]],[xc+w,P[2][0],P[2][1]],[xc+w,P[3][0],P[3][1]]);
+    tri(W2,[xc-w,P[0][0],P[0][1]],[xc-w,P[2][0],P[2][1]],[xc-w,P[1][0],P[1][1]]);
+    tri(W2,[xc-w,P[0][0],P[0][1]],[xc-w,P[3][0],P[3][1]],[xc-w,P[2][0],P[2][1]]);
   }
   pant(+1); pant(-1);
 
@@ -410,7 +432,7 @@ const CESSNA_MESH = (() => {
     {lx:-22.1, ly:7.0, lz:0.45, color:'#ff2020', glow:'rgba(255,40,40,'},   // babord (rouge)
     {lx: 22.1, ly:7.0, lz:0.45, color:'#20ff40', glow:'rgba(40,255,60,'},   // tribord (vert)
     {lx:  0.0, ly:-16.0, lz:-0.42, color:'#ffffff', glow:'rgba(255,255,255,'}, // feu de queue
-    {lx:  0.0, ly:-13.0, lz:7.42,  color:'#ff4040', glow:'rgba(255,80,60,'},   // balise sup. derive
+    {lx:  0.0, ly:-13.6, lz:7.5,   color:'#ff4040', glow:'rgba(255,80,60,'},   // balise sup. derive
   ];
   M._landingLight = {lx:-6.0, ly:8.5, lz:-0.14};
 
@@ -444,9 +466,11 @@ function pushAnimFace(visible, col, pts, lit) {
 // Stations de bord de fuite de l'aile (35% arriere de la corde)
 // Les ailerons occupent les stations 3-6 (mi-aile → bout)
 function addAilerons(visible) {
-  // Deflexion differentielle : un monte, l'autre descend
-  const deflR = -pl.aileron * 0.35;  // droite (oppose)
-  const deflL =  pl.aileron * 0.35;  // gauche
+  // Deflexion differentielle : un monte, l'autre descend.
+  // Roulis gauche (pl.aileron>0) → aileron GAUCHE relevé / DROIT abaissé.
+  // (defl>0 = bord de fuite vers le bas)
+  const deflR =  pl.aileron * 0.35;  // droite : descend en roulis gauche
+  const deflL = -pl.aileron * 0.35;  // gauche : monte en roulis gauche
   addAileronSide(visible, +1, deflR);
   addAileronSide(visible, -1, deflL);
 }
@@ -572,6 +596,22 @@ function addElevatorSide(visible, side, defl) {
       [b.x, b.yH, b.z - b.t],
       [a.x, a.yH, a.z - a.t]
     ]);
+    // Bord de fuite (ferme le slot entre dessus et dessous)
+    pushAnimFace(visible, '#b4b0a4', [
+      [a.x, yTA, zTA + a.t * 0.3],
+      [b.x, yTB, zTB + b.t * 0.3],
+      [b.x, yTB, zTB - b.t * 0.3],
+      [a.x, yTA, zTA - a.t * 0.3]
+    ]);
+    // Bout extérieur (sur la dernière travée)
+    if (i === S.length - 2) {
+      pushAnimFace(visible, '#cac6ba', [
+        [b.x, b.yH, b.z + b.t],
+        [b.x, yTB, zTB + b.t * 0.3],
+        [b.x, yTB, zTB - b.t * 0.3],
+        [b.x, b.yH, b.z - b.t]
+      ]);
+    }
   }
 }
 
@@ -579,40 +619,27 @@ function addElevatorSide(visible, side, defl) {
 // Bord de fuite de la derive, pivote en lacet (dans le plan XY)
 function addRudder(visible) {
   const defl = pl.rudder * 0.35;  // positif = bord de fuite va a gauche
-
-  // Stations de la gouverne [y_hinge, y_trail, z_bas, z_haut]
-  // La charniere est a ~60% de la corde de la derive
-  const S = [
-    {yH: -14.8, yT: -16.2, z0: 0.65, z1: 2.55},
-    {yH: -14.6, yT: -16.0, z0: 2.55, z1: 4.85},
-    {yH: -14.0, yT: -15.5, z0: 4.85, z1: 6.60},
-    {yH: -13.2, yT: -14.5, z0: 6.60, z1: 7.42},
-  ];
-
-  const fw = 0.24;  // demi-epaisseur
+  const fw = 0.16;
   const cosD = Math.cos(defl), sinD = Math.sin(defl);
 
-  for (let i = 0; i < S.length; i++) {
-    const s = S[i];
-    const dyH = s.yT - s.yH;
-    // Trailing edge apres rotation dans le plan XY
-    const yTE = s.yH + dyH * cosD;
-    const xTE = dyH * sinD;  // deviation laterale
+  // Partie animée : charnière → bord de fuite (mêmes stations que la dérive fixe)
+  for (let i = 0; i < VTAIL.length-1; i++) {
+    const [z0,le0,te0] = VTAIL[i], [z1,le1,te1] = VTAIL[i+1];
+    const h0 = le0 - VTAIL_HF*(le0-te0), h1 = le1 - VTAIL_HF*(le1-te1);
+    const dy0 = te0 - h0, dy1 = te1 - h1;            // charnière → bord de fuite
+    const yT0 = h0 + dy0*cosD, xT0 = dy0*sinD;
+    const yT1 = h1 + dy1*cosD, xT1 = dy1*sinD;
 
-    // Panneau de gouverne (cote droit)
-    pushAnimFace(visible, '#e8e5da', [
-      [fw, s.yH, s.z0],
-      [fw, s.yH, s.z1],
-      [fw + xTE, yTE, s.z1],
-      [fw + xTE, yTE, s.z0]
-    ]);
-    // Cote gauche
-    pushAnimFace(visible, '#dedad0', [
-      [-fw, s.yH, s.z1],
-      [-fw, s.yH, s.z0],
-      [-fw + xTE, yTE, s.z0],
-      [-fw + xTE, yTE, s.z1]
-    ]);
+    // Flanc droit
+    pushAnimFace(visible, '#e8e5da', [[fw,h0,z0],[fw,h1,z1],[fw+xT1,yT1,z1],[fw+xT0,yT0,z0]]);
+    // Flanc gauche
+    pushAnimFace(visible, '#dedad0', [[-fw,h0,z0],[-fw+xT0,yT0,z0],[-fw+xT1,yT1,z1],[-fw,h1,z1]]);
+    // Bord de fuite (ferme la fente)
+    pushAnimFace(visible, '#c8c4b8', [[fw+xT0,yT0,z0],[fw+xT1,yT1,z1],[-fw+xT1,yT1,z1],[-fw+xT0,yT0,z0]]);
+    // Sommet (dernière travée)
+    if (i === VTAIL.length-2) {
+      pushAnimFace(visible, '#dedad0', [[fw,h1,z1],[fw+xT1,yT1,z1],[-fw+xT1,yT1,z1],[-fw,h1,z1]]);
+    }
   }
 }
 

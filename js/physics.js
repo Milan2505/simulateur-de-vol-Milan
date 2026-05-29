@@ -122,6 +122,7 @@ function physStep(dt) {
     - pl.q * 5.0 * ctrlEff                // amortissement en tangage
     - aoa * 1.2 * ctrlEff                 // stabilité longitudinale (CG devant CP)
     + buffet * 0.3                         // buffet de décrochage
+    - stallInt * 1.8 * ctrlEff            // abattée : au décrochage le nez tombe
     - flaps * 0.04 * ctrlEff;             // moment piqueur des volets
 
   // ── ROULIS (moment autour de Y / axe avant) ──────────
@@ -195,9 +196,13 @@ function physStep(dt) {
   // FORCES AÉRODYNAMIQUES → VITESSE
   // ══════════════════════════════════════════════════════
 
+  // ── Densité de l'air (ISA simplifié) : ~1 au sol, décroît avec l'altitude ──
+  // → poussée et portance diminuent en altitude (plafond réaliste, montée qui faiblit)
+  const densAlt = Math.max(0.32, 1 - pl.z / 24000);
+
   // ── Poussée ───────────────────────────────────────────
   const propEff = Math.max(0.4, 1.0 - V / 320);
-  const thrust  = pl.throttle * MAX_THR * propEff;
+  const thrust  = pl.throttle * MAX_THR * propEff * densAlt;
 
   // ── Portance ──────────────────────────────────────────
   const stallMargin = (V - stallSpd + 5) / 15;
@@ -206,9 +211,9 @@ function physStep(dt) {
     ? Math.max(0, 1 + (aoa + flapCL) * CL_ALPHA) * stallFac
     : (1 + aoa * CL_ALPHA);
   const cosRoll = Math.max(0.15, Math.cos(pl.roll));
-  const lift    = LIFT_K * V * V * cosRoll * aoaFac;
+  const lift    = LIFT_K * V * V * cosRoll * aoaFac * densAlt;
   const liftGnd = LIFT_K * V * V * cosRoll
-                * Math.max(0, 1 + (aoa + flapCL) * CL_ALPHA) * stallFac;
+                * Math.max(0, 1 + (aoa + flapCL) * CL_ALPHA) * stallFac * densAlt;
 
   // ── Traînée ───────────────────────────────────────────
   const nG = 1.0 / cosRoll;

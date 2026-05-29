@@ -6,7 +6,6 @@ function makeCloud() {
   const cx = (Math.random() - .5) * 55000;
   const cy = (Math.random() - .5) * 55000;
   const puffs = [];
-  const roll = Math.random();
   let type, cW, cz, aspectH;
 
   function addLayers(layers) {
@@ -24,38 +23,19 @@ function makeCloud() {
     }
   }
 
-  if (roll < 0.45) {
-    type = 'cumulus'; cW = 3000 + Math.random() * 4000; cz = 2000 + Math.random() * 2500; aspectH = 0.70;
-    addLayers([
-      { n: 10, yFrac: 0.00, spread: 0.70, r: 0.26 }, { n: 10, yFrac: 0.18, spread: 0.90, r: 0.28 },
-      { n: 9, yFrac: 0.35, spread: 0.95, r: 0.29 }, { n: 8, yFrac: 0.52, spread: 0.88, r: 0.28 },
-      { n: 7, yFrac: 0.66, spread: 0.72, r: 0.26 }, { n: 5, yFrac: 0.78, spread: 0.52, r: 0.24 },
-      { n: 4, yFrac: 0.88, spread: 0.32, r: 0.20 }, { n: 2, yFrac: 0.95, spread: 0.14, r: 0.16 },
-    ]);
-  } else if (roll < 0.65) {
-    type = 'cumulonimbus'; cW = 5000 + Math.random() * 5000; cz = 1800 + Math.random() * 1800; aspectH = 1.20;
-    addLayers([
-      { n: 11, yFrac: 0.00, spread: 0.88, r: 0.26 }, { n: 11, yFrac: 0.12, spread: 0.92, r: 0.27 },
-      { n: 10, yFrac: 0.24, spread: 0.95, r: 0.27 }, { n: 10, yFrac: 0.36, spread: 0.92, r: 0.26 },
-      { n: 9, yFrac: 0.48, spread: 0.85, r: 0.25 }, { n: 8, yFrac: 0.59, spread: 0.75, r: 0.24 },
-      { n: 7, yFrac: 0.69, spread: 0.62, r: 0.22 }, { n: 6, yFrac: 0.78, spread: 0.48, r: 0.20 },
-      { n: 4, yFrac: 0.87, spread: 0.32, r: 0.18 }, { n: 3, yFrac: 0.94, spread: 0.16, r: 0.14 },
-    ]);
-  } else if (roll < 0.80) {
-    type = 'stratus'; cW = 9000 + Math.random() * 9000; cz = 1000 + Math.random() * 1200; aspectH = 0.10;
-    for (let i = 0; i < 50; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const d = Math.sqrt(Math.random());
-      puffs.push({ lx: Math.cos(a) * d * .95, lz: 0.3 + Math.random() * .4, size: 0.30 + Math.random() * .20 });
-    }
-  } else {
-    type = 'altocumulus'; cW = 1800 + Math.random() * 2200; cz = 4000 + Math.random() * 2000; aspectH = 0.60;
-    addLayers([
-      { n: 7, yFrac: 0.00, spread: 0.75, r: 0.25 }, { n: 7, yFrac: 0.22, spread: 0.88, r: 0.27 },
-      { n: 6, yFrac: 0.45, spread: 0.80, r: 0.25 }, { n: 4, yFrac: 0.65, spread: 0.55, r: 0.22 },
-      { n: 2, yFrac: 0.82, spread: 0.25, r: 0.17 },
-    ]);
-  }
+  // Archétype UNIQUE : cumulus de beau temps (formes cohérentes, jamais plates).
+  // Seule la taille varie → un ciel homogène et réaliste.
+  type = 'cumulus';
+  const big = Math.random() < 0.35;
+  cW = big ? (2800 + Math.random() * 1500) : (1500 + Math.random() * 1100);
+  cz = 2100 + Math.random() * 2400;
+  aspectH = 0.60 + Math.random() * 0.14;   // 0.60 → 0.74 (toujours bombé)
+  addLayers([
+    { n: 10, yFrac: 0.00, spread: 0.72, r: 0.27 }, { n: 10, yFrac: 0.20, spread: 0.92, r: 0.29 },
+    { n: 9,  yFrac: 0.38, spread: 0.95, r: 0.29 }, { n: 8,  yFrac: 0.54, spread: 0.86, r: 0.27 },
+    { n: 7,  yFrac: 0.68, spread: 0.68, r: 0.25 }, { n: 5,  yFrac: 0.80, spread: 0.46, r: 0.22 },
+    { n: 3,  yFrac: 0.90, spread: 0.26, r: 0.18 },
+  ]);
 
   const W_span = cW / 2, D_span = cW / 2, H_span = cW * (aspectH || 0.7);
   return { cx, cy, cz, W: cW, puffs, type, aspectH, W_span, D_span, H_span };
@@ -105,7 +85,7 @@ function drawOneCloud(cl, pc, sc, fog) {
 
   // Étape 1 : masse blanche fusionnée par blur
   oc.clearRect(0, 0, pw, ph);
-  const blurPx = Math.max(2, swS * 0.028);
+  const blurPx = Math.max(1.5, swS * 0.016);  // moins flou → structure en chou-fleur
   oc.filter = `blur(${blurPx.toFixed(1)}px)`;
   const sorted = [...cl.puffs].sort((a, b) => a.lz - b.lz);
   for (const p of sorted) {
@@ -198,11 +178,11 @@ function drawClouds() {
     if (dx * dx + dy * dy > 58000 * 58000) {
       cl.cx = pl.x + (Math.random() - .5) * 55000;
       cl.cy = pl.y + (Math.random() - .5) * 55000;
-      cl.cz = 2000 + Math.random() * 3500;
+      cl.cz = 2100 + Math.random() * 2400;
       return;
     }
     const eucD = Math.sqrt(dx * dx + dy * dy + (cl.cz - cam.cz) ** 2);
-    if (eucD < 1200 || eucD > 42000) return;
+    if (eucD < 3000 || eucD > 42000) return;  // pas de nuage géant collé à la caméra
     const sc = FOV / eucD;
     const fog = Math.min(1, eucD / 44000);
     const pc = project(cl.cx, cl.cy, cl.cz);

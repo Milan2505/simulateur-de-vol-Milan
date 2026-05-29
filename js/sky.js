@@ -8,9 +8,9 @@ function drawSky() {
   g.addColorStop(0, `rgb(${Math.round(8 + t * 4)},${Math.round(30 + t * 10)},${Math.round(110 + t * 60)})`);
   g.addColorStop(0.35, `rgb(${Math.round(20 + t * 8)},${Math.round(80 + t * 20)},${Math.round(170 + t * 50)})`);
   g.addColorStop(0.65, `rgb(${Math.round(80 + t * 10)},${Math.round(160 + t * 20)},${Math.round(220 + t * 20)})`);
-  g.addColorStop(0.82, 'rgb(185,215,235)');
-  g.addColorStop(0.93, 'rgb(210,225,200)');
-  g.addColorStop(1, 'rgb(80,100,60)');
+  g.addColorStop(0.82, 'rgb(186,212,232)');
+  g.addColorStop(0.94, 'rgb(200,216,226)');
+  g.addColorStop(1, 'rgb(208,220,224)');   // brume d'horizon (plus de bande verte)
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
   // Brume horizon
