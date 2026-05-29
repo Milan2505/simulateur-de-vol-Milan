@@ -141,14 +141,14 @@ const CESSNA_MESH = (() => {
         const B = [Math.cos(a1)*rxa, ya, cza+Math.sin(a1)*rza];
         const C = [Math.cos(a1)*rxb, yb, czb+Math.sin(a1)*rzb];
         const D = [Math.cos(a0)*rxb, yb, czb+Math.sin(a0)*rzb];
-        quad((i%2===0)?MT:MT2, A, B, C, D);
+        quad((i%2===0)?W2:W3, A, B, C, D);  // capot blanc (couleur caisse) au lieu de métal sombre
       }
     }
     const [yf,rxf,rzf,czf] = S[S.length-1];
     for (let i = 0; i < N; i++) {
       const a0 = i/N*Math.PI*2 - Math.PI/2;
       const a1 = (i+1)/N*Math.PI*2 - Math.PI/2;
-      tri(MT2,[0,20.2,czf],
+      tri(W3,[0,20.2,czf],
         [Math.cos(a0)*rxf,yf,czf+Math.sin(a0)*rzf],
         [Math.cos(a1)*rxf,yf,czf+Math.sin(a1)*rzf]);
     }
@@ -243,13 +243,25 @@ const CESSNA_MESH = (() => {
   // VITRES
   // ═══════════════════════════════════════════════════════
   {
-    const vZ1=-0.10, vZ2=2.05, e=0.02;
-    quad(GL, [-1.48,13.5,vZ1],[1.48,13.5,vZ1],[1.65,9.5,vZ2],[-1.65,9.5,vZ2]);
+    const vZ1=0.55, vZ2=2.05, e=0.02;   // base des vitres remontée (planche de bord)
+    // Pare-brise : de la planche de bord (y12.6, z0.9) jusqu'au toit (y9.5, z2.05)
+    quad(GL, [-1.30,12.6,0.92],[1.30,12.6,0.92],[1.60,9.5,vZ2],[-1.60,9.5,vZ2]);
+    // Vitres latérales (portes)
     quad(GL2,[1.70+e,9.5,vZ1],[1.70+e,9.5,vZ2],[1.68+e,-2.0,vZ2-0.05],[1.68+e,-2.0,vZ1+0.05]);
     quad(GL2,[-1.70-e,9.5,vZ1],[-1.68-e,-2.0,vZ1+0.05],[-1.68-e,-2.0,vZ2-0.05],[-1.70-e,9.5,vZ2]);
-    quad(GL2,[1.68+e,-2.0,vZ1+0.15],[1.68+e,-2.0,vZ2-0.25],[0.88,-3.8,vZ2-0.80],[0.88,-3.8,vZ1+0.28]);
-    quad(GL2,[-1.68-e,-2.0,vZ1+0.15],[-0.88,-3.8,vZ1+0.28],[-0.88,-3.8,vZ2-0.80],[-1.68-e,-2.0,vZ2-0.25]);
-    quad(GL, [-1.70,9.5,vZ2+0.12],[1.70,9.5,vZ2+0.12],[1.68,-2.0,vZ2+0.05],[-1.68,-2.0,vZ2+0.05]);
+    // Custodes arrière
+    quad(GL2,[1.68+e,-2.0,vZ1+0.10],[1.68+e,-2.0,vZ2-0.25],[0.88,-3.8,vZ2-0.80],[0.88,-3.8,vZ1+0.20]);
+    quad(GL2,[-1.68-e,-2.0,vZ1+0.10],[-0.88,-3.8,vZ1+0.20],[-0.88,-3.8,vZ2-0.80],[-1.68-e,-2.0,vZ2-0.25]);
+    // Toit vitré (skylight Cessna)
+    quad(GL, [-1.60,9.5,vZ2+0.12],[1.60,9.5,vZ2+0.12],[1.58,-2.0,vZ2+0.05],[-1.58,-2.0,vZ2+0.05]);
+
+    // ── Montants & seuils (encadrent les vitres) ──
+    for (const sgn of [1,-1]) {
+      const X = sgn*1.70;
+      gBox(W2, X, 9.5, 0.55, X, 9.5, 2.05, 0.07);   // montant A (pare-brise/porte)
+      gBox(W2, X, -2.0, 0.55, X, -2.0, 2.05, 0.07);  // montant B (porte/custode)
+      gBox(W3, X, 9.4, 0.50, X, -3.4, 0.50, 0.05);   // bas de caisse (seuil)
+    }
   }
 
   // ═══════════════════════════════════════════════════════
@@ -271,24 +283,25 @@ const CESSNA_MESH = (() => {
       [s*22.0,  7.3, 2.9,  0.25,-0.07, 0.26],
     ];
 
+    // Ligne de charnière par station = bord d'attaque des gouvernes (volets x1.72→11, ailerons x11→22)
+    // L'aile fixe s'arrête ici → les gouvernes comblent le bord de fuite sans superposition.
+    const HINGE = [5.8, 5.6, 5.4, 5.5, 5.2, 5.0, 4.9];
+
     for (let i = 0; i < WP.length - 1; i++) {
       const [xa,yaa,yab,zta,zba,dza] = WP[i];
       const [xb,yba,ybb,ztb,zbb,dzb] = WP[i+1];
+      const yhA = HINGE[i], yhB = HINGE[i+1];
 
-      // Hinge Y = 65% chord from leading edge
-      const cA = yaa - yab, cB = yba - ybb;
-      const yhA = yaa - cA * 0.65, yhB = yba - cB * 0.65;
-
-      // Partie fixe (bord d'attaque → charniere)
+      // Partie fixe (bord d'attaque → charnière uniquement)
       // Dessus
-      quad(W, [xa,yab,zta+dza],[xa,yaa,zta+dza],[xb,yba,ztb+dzb],[xb,ybb,ztb+dzb]);
+      quad(W, [xa,yhA,zta+dza],[xa,yaa,zta+dza],[xb,yba,ztb+dzb],[xb,yhB,ztb+dzb]);
       // Dessous
-      quad(W3,[xa,yab,zba+dza],[xb,ybb,zbb+dzb],[xb,yba,zbb+dzb],[xa,yaa,zba+dza]);
+      quad(W3,[xa,yhA,zba+dza],[xb,yhB,zbb+dzb],[xb,yba,zbb+dzb],[xa,yaa,zba+dza]);
       // Bord d'attaque (face avant)
       quad(W, [xa,yaa,(zta+zba)/2+dza],[xb,yba,(ztb+zbb)/2+dzb],[xb,yba,ztb+dzb],[xa,yaa,zta+dza]);
       quad(W2,[xa,yaa,zba+dza],[xa,yaa,(zta+zba)/2+dza],[xb,yba,(ztb+zbb)/2+dzb],[xb,yba,zbb+dzb]);
-      // Intrados
-      quad(W2,[xa,yab,zta+dza],[xb,ybb,ztb+dzb],[xb,ybb,zbb+dzb],[xa,yab,zba+dza]);
+      // Bord de fuite fixe (cap à la charnière → ferme le caisson)
+      quad(W2,[xa,yhA,zta+dza],[xb,yhB,ztb+dzb],[xb,yhB,zbb+dzb],[xa,yhA,zba+dza]);
     }
 
     // Sauterelle
@@ -522,7 +535,7 @@ function addAileronSide(visible, side, defl) {
 // ── VOLETS ──────────────────────────────────────────────
 // Stations 0-3 de l'aile (interieur), deflexion vers le bas
 function addFlaps(visible) {
-  if (flaps === 0) return;
+  // Toujours dessinés : à déflexion 0 ils comblent le bord de fuite intérieur de l'aile.
   const defl = flaps * 0.22;  // ~0, 12, 25, 48 deg
   addFlapSide(visible, +1, defl);
   addFlapSide(visible, -1, defl);
@@ -618,7 +631,9 @@ function addElevatorSide(visible, side, defl) {
 // ── GOUVERNE DE DIRECTION (RUDDER) ──────────────────────
 // Bord de fuite de la derive, pivote en lacet (dans le plan XY)
 function addRudder(visible) {
-  const defl = pl.rudder * 0.35;  // positif = bord de fuite va a gauche
+  // signe inversé pour que le sens du braquage corresponde au lacet réel
+  // (rudder>0 → lacet à droite → bord de fuite à droite), comme la correction des ailerons
+  const defl = -pl.rudder * 0.35;
   const fw = 0.16;
   const cosD = Math.cos(defl), sinD = Math.sin(defl);
 

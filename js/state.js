@@ -9,13 +9,20 @@ window.addEventListener('resize', () => { W = cvs.width = innerWidth; H = cvs.he
 const attX = document.getElementById('att').getContext('2d');
 
 // ── Clavier ──
+// On stocke à la fois le code physique (flèches, Shift…) ET le caractère produit
+// (lettres) → les touches lettres marchent en AZERTY comme en QWERTY (par libellé).
 const K = {};
 window.addEventListener('keydown', e => {
   K[e.code] = true;
-  if (e.code === 'KeyF' && started && !crashed) flaps = Math.min(3, flaps + 1);
-  if (e.code === 'KeyG' && started && !crashed) flaps = Math.max(0, flaps - 1);
+  if (e.key) K[e.key.toLowerCase()] = true;
+  // Volets : flèche bas = sortir (+), flèche haut = rentrer (−) — un cran par appui
+  if (e.code === 'ArrowDown' && !e.repeat && started && !crashed) flaps = Math.min(3, flaps + 1);
+  if (e.code === 'ArrowUp'   && !e.repeat && started && !crashed) flaps = Math.max(0, flaps - 1);
 });
-window.addEventListener('keyup', e => { K[e.code] = false; });
+window.addEventListener('keyup', e => {
+  K[e.code] = false;
+  if (e.key) K[e.key.toLowerCase()] = false;
+});
 
 // ── État jeu ──
 // camMode : 0=cockpit, 1=poursuite (défaut, fixe à l'avion), 2=latérale, 3=libre (orbite souris)

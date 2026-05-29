@@ -49,24 +49,24 @@ function physStep(dt) {
   // → animation fluide + inertie de commande
   const sRate = 4.0 * dt;
 
-  // Profondeur (tangage)
+  // Profondeur (tangage) : S = cabrer (gouverne ↑), Z = piquer
   let eT = 0;
-  if (K['ArrowUp'])   eT =  1;
-  if (K['ArrowDown']) eT = -1;
+  if (K['s']) eT =  1;
+  if (K['z']) eT = -1;
   pl.elevator = moveToward(pl.elevator, eT, sRate);
 
-  // Ailerons (roulis) — actifs en vol et à haute vitesse au sol
+  // Ailerons (roulis) : Q = gauche, D = droite (+ flèches G/D en secours).
+  // La gouverne se braque TOUJOURS (même à l'arrêt) ; c'est l'efficacité aéro
+  // qui dépend de la vitesse (ctrlEff ∝ V²).
   let aT = 0;
-  if (!onGround || V > 25) {
-    if (K['ArrowLeft'])  aT =  1;
-    if (K['ArrowRight']) aT = -1;
-  }
+  if (K['q'] || K['ArrowLeft'])  aT =  1;
+  if (K['d'] || K['ArrowRight']) aT = -1;
   pl.aileron = moveToward(pl.aileron, aT, sRate);
 
-  // Direction (lacet)
+  // Direction / palonnier (lacet) : A = gauche, E = droite
   let rT = 0;
-  if (K['KeyQ'] || K['KeyA']) rT =  1;
-  if (K['KeyE'] || K['KeyD']) rT = -1;
+  if (K['a']) rT =  1;
+  if (K['e']) rT = -1;
   pl.rudder = moveToward(pl.rudder, rT, sRate);
 
   // Gaz
@@ -95,7 +95,9 @@ function physStep(dt) {
 
   // ══ ANGLE D'ATTAQUE ═══════════════════════════════════
   const fpa = (V > 5) ? Math.atan2(pl.vz, V * 0.20) : 0;
-  const aoa = pl.pitch - fpa * 0.6;
+  // incidence : assiette − pente + effet DIRECT de la profondeur (le braquage change
+  // l'incidence immédiatement → commande plus franche, virages qui tiennent l'altitude)
+  const aoa = pl.pitch - fpa * 0.6 + pl.elevator * 0.08;
 
   // Estimation du dérapage (sideslip) depuis le taux de lacet
   const sideslip = (V > 5) ? Math.atan2(pl.r * 3.0, V) : 0;
@@ -131,6 +133,8 @@ function physStep(dt) {
     - pl.p * 4.5 * ctrlEff                // amortissement en roulis
     - sideslip * 0.8 * ctrlEff            // effet dièdre → stabilité spirale
     + pl.r * 0.15 * Math.min(1, V * 0.01) * ctrlEff  // couplage lacet→roulis
+    - pl.rudder * 0.55 * ctrlEff          // dièdre : le palonnier fait rouler dans le sens du lacet
+    + stallInt * Math.sin(performance.now() * 0.004) * 1.3  // décrochage : l'avion lâche une aile (wing rock)
     + buffet * 0.5;                        // buffet
 
   // ── LACET (moment autour de Z / axe haut) ────────────
@@ -154,7 +158,9 @@ function physStep(dt) {
   }
 
   // ══ INTÉGRATION DES TAUX ANGULAIRES ═══════════════════
-  const Ix = 1.0, Iy = 1.2, Iz = 1.5;  // moments d'inertie normalisés
+  // Inerties augmentées → l'avion a du « poids » : il met plus de temps à
+  // amorcer/arrêter une rotation (même taux max, mais réponse plus progressive).
+  const Ix = 1.7, Iy = 2.3, Iz = 2.6;
   pl.q += (Mq / Iy) * dt;   // tangage
   pl.p += (Ml / Ix) * dt;   // roulis
   pl.r += (Mn / Iz) * dt;   // lacet
@@ -188,9 +194,9 @@ function physStep(dt) {
   pl.pitch += dPitch * dt;
   pl.yaw   += dYaw   * dt;
 
-  // Limites d'attitude
-  pl.pitch = clamp(pl.pitch, -0.50, 0.75);
-  pl.roll  = clamp(pl.roll, -Math.PI * 0.48, Math.PI * 0.48);
+  // Limites d'attitude (élargies → bien plus de liberté de manœuvre)
+  pl.pitch = clamp(pl.pitch, -1.0, 1.1);
+  pl.roll  = clamp(pl.roll, -2.7, 2.7);
 
   // ══════════════════════════════════════════════════════
   // FORCES AÉRODYNAMIQUES → VITESSE
@@ -262,9 +268,10 @@ function physStep(dt) {
     // Intégration altitude
     pl.z += pl.vz * dt * 5;
 
-    // Stabilité résiduelle (faible — le gros est dans les moments)
+    // Stabilité résiduelle : longitudinale conservée, mais le roulis ne se
+    // remet quasiment plus à plat seul → les virages se maintiennent (réaliste).
     pl.pitch += (0 - pl.pitch) * 0.04 * ctrlEff * dt;
-    pl.roll  += (0 - pl.roll)  * 0.03 * dt;
+    pl.roll  += (0 - pl.roll)  * 0.006 * dt;
 
   } else {
     // ══ CONTACT SOL ═════════════════════════════════════

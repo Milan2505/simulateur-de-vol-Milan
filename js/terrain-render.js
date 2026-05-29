@@ -123,7 +123,9 @@ function drawTriangle(A, B, C, T, FAR) {
   diffuse -= (1 - nz) * 0.14;
   diffuse = Math.max(0.18, diffuse);
 
-  const fogF = Math.pow(Math.min(1, dist / FAR), .58);
+  // Perspective atmosphérique renforcée : les reliefs lointains se fondent
+  // dans la brume au lieu de former un « mur vert » à l'horizon.
+  const fogF = Math.pow(Math.min(1, dist / FAR), .42);
   const avgH = (A.wz + B.wz + C.wz) / 3;
   let [r, g, b] = biomeColor(avgH, A.wx, A.wy, diffuse, fogF, T, nx, ny, nz);
 

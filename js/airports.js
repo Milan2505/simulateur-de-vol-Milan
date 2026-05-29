@@ -46,17 +46,28 @@ function runwayZ(ap){
 // Projette un point 3D monde et retourne {sx,sy,d} ou null
 function prj(wx,wy,wz){ return project(wx,wy,wz); }
 
-// Dessine un quad monde flat avec couleur et distance fog
+// Dessine un quad monde flat avec découpage near-plane (Sutherland-Hodgman).
+// → la piste ne disparaît plus quand un coin passe derrière la caméra.
 function drawFlatQuad(col, p1,p2,p3,p4, fogF){
-  const a=prj(...p1), b=prj(...p2), c=prj(...p3), d=prj(...p4);
-  if(!a||!b||!c||!d) return;
-  // Fog
-  const f=fogF||0;
+  const pts=[p1,p2,p3,p4], out=[];
+  for(let i=0;i<4;i++){
+    const cur=pts[i], nxt=pts[(i+1)%4];
+    const pc=project(cur[0],cur[1],cur[2]);
+    const pn=project(nxt[0],nxt[1],nxt[2]);
+    if(pc) out.push(pc);
+    if((!!pc)!==(!!pn)){  // l'arête traverse le plan rapproché
+      const bp = pc ? clipEdge(nxt[0],nxt[1],nxt[2], cur[0],cur[1],cur[2])
+                    : clipEdge(cur[0],cur[1],cur[2], nxt[0],nxt[1],nxt[2]);
+      if(bp) out.push(bp);
+    }
+  }
+  if(out.length<3) return;
+  ctx.fillStyle=col;
   ctx.beginPath();
-  ctx.moveTo(a.sx,a.sy); ctx.lineTo(b.sx,b.sy);
-  ctx.lineTo(c.sx,c.sy); ctx.lineTo(d.sx,d.sy);
+  ctx.moveTo(out[0].sx,out[0].sy);
+  for(let i=1;i<out.length;i++) ctx.lineTo(out[i].sx,out[i].sy);
   ctx.closePath();
-  ctx.fillStyle=col; ctx.fill();
+  ctx.fill();
 }
 
 // ── Désignateur de piste : vrais chiffres peints au sol (afficheur 7 segments) ──
@@ -413,11 +424,15 @@ function drawAirportBuildings(){
     const px=-cy, py=cx;
     const hw=ap.wid/2;
 
+    // base ancrée au sol réel : le bâtiment descend jusqu'au terrain (jamais flottant)
+    const groundBase = (bx,by) => Math.min(z, terrainH(bx,by));
+
     // ── Hangar principal (côté droit de la piste, milieu) ──
     {
-      const bx=ap.wx+px*(hw+35), by=ap.wy+py*(hw+35);
+      const bx=ap.wx+px*(hw+22), by=ap.wy+py*(hw+22);
       const bw=18, bd=24, bh=8;
-      drawBox3D(bx,by,z,bw,bd,bh,cx,cy,px,py,fogF,
+      const gb=groundBase(bx,by);
+      drawBox3D(bx,by,gb,bw,bd,(z+bh)-gb,cx,cy,px,py,fogF,
         [140,135,125],[110,108,100],[85,82,78]);
       // Toit
       drawBox3D(bx,by,z+bh,bw+1,bd+1,1.5,cx,cy,px,py,fogF,
@@ -436,17 +451,19 @@ function drawAirportBuildings(){
 
     // ── Second hangar (côté droit, décalé) ──
     {
-      const bx=ap.wx+px*(hw+35)+cx*50, by=ap.wy+py*(hw+35)+cy*50;
+      const bx=ap.wx+px*(hw+22)+cx*50, by=ap.wy+py*(hw+22)+cy*50;
       const bw=14, bd=18, bh=6.5;
-      drawBox3D(bx,by,z,bw,bd,bh,cx,cy,px,py,fogF,
+      const gb=groundBase(bx,by);
+      drawBox3D(bx,by,gb,bw,bd,(z+bh)-gb,cx,cy,px,py,fogF,
         [155,148,135],[125,120,110],[95,90,82]);
     }
 
     // ── Tour de contrôle (côté gauche) ──
     if(dc<1500){
-      const tx=ap.wx-px*(hw+28), ty=ap.wy-py*(hw+28);
-      // Base
-      drawBox3D(tx,ty,z,4,4,14,cx,cy,px,py,fogF,
+      const tx=ap.wx-px*(hw+20), ty=ap.wy-py*(hw+20);
+      const gb=groundBase(tx,ty);
+      // Base (descend jusqu'au sol)
+      drawBox3D(tx,ty,gb,4,4,(z+14)-gb,cx,cy,px,py,fogF,
         [165,160,152],[135,130,122],[105,100,92]);
       // Cabine vitrée
       drawBox3D(tx,ty,z+14,6,6,4,cx,cy,px,py,fogF,
@@ -460,7 +477,7 @@ function drawAirportBuildings(){
     if(dc<800){
       const sx=ap.wx-px*(hw+12)+cx*ap.len*0.35;
       const sy=ap.wy-py*(hw+12)+cy*ap.len*0.35;
-      const pole=project(sx,sy,z);
+      const pole=project(sx,sy,groundBase(sx,sy));
       const poleTop=project(sx,sy,z+6);
       if(pole&&poleTop){
         // Mât
