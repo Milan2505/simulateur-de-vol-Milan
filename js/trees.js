@@ -73,8 +73,6 @@ function drawTrees(T){
   for(const t of trees){
     const fogF=Math.pow(Math.min(1,t.d/TREE_RANGE),0.7);
     if(fogF>0.95) continue;
-    // Fondu par transparence en distance → évite les points clairs « bruités »
-    ctx.globalAlpha = Math.min(1, 1.2 * (1 - fogF));
 
     const sx=t.base.sx, sy=t.base.sy;
     const topSy=t.top.sy;
@@ -82,6 +80,13 @@ function drawTrees(T){
     const scaleW=scaleH*0.45;
 
     if(scaleH<2) continue;
+
+    // Anti « grosse tache verte » : un arbre trop proche est projeté énorme à l'écran
+    // (le feuillage n'est qu'une ellipse) → il s'estompe au lieu de remplir l'écran d'un blob.
+    const sizeFade = clamp((H*0.40 - scaleH)/(H*0.16), 0, 1);
+    if(sizeFade<=0) continue;
+    // Fondu par distance + fondu par taille (proximité)
+    ctx.globalAlpha = Math.min(1, 1.2 * (1 - fogF)) * sizeFade;
 
     const trunkBot=sy;
     const trunkTop=sy-(scaleH*0.30);
@@ -121,7 +126,7 @@ function drawTrees(T){
       const hr=Math.round(lerp(62+((t.twx*3)&10),FOG_R,fogF));
       const hg=Math.round(lerp(118+((t.twy*5)&12),FOG_G,fogF));
       const hb=Math.round(lerp(28,FOG_B,fogF));
-      ctx.fillStyle=`rgba(${hr},${hg},${hb},0.5)`;
+      ctx.fillStyle=`rgba(${hr},${hg},${hb},0.32)`;
       ctx.beginPath();
       ctx.ellipse(sx-cr*0.2, cy2-cr*0.25, cr*0.55, cr*0.55, 0, 0, Math.PI*2);
       ctx.fill();

@@ -6,27 +6,41 @@ function getCam() {
   if (camMode === 0) {
     return { cx: pl.x, cy: pl.y, cz: pl.z + 3.6, cyaw: pl.yaw, cpitch: pl.pitch, croll: pl.roll };
   } else if (camMode === 1) {
+    // Poursuite : derrière l'avion. On empêche la caméra de plonger sous le terrain
+    // (sinon on « filme dans le sol » → mur vert quand un relief monte derrière l'avion).
     const behind = 34, above = 8;
     const cosY = Math.cos(pl.yaw), sinY = Math.sin(pl.yaw);
     const cosPi = Math.cos(pl.pitch);
-    return {
-      cx: pl.x - sinY * behind * cosPi,
-      cy: pl.y - cosY * behind * cosPi,
-      cz: pl.z + above + Math.sin(pl.pitch) * behind,
-      cyaw: pl.yaw, cpitch: -0.05, croll: 0
-    };
+    const cx = pl.x - sinY * behind * cosPi;
+    const cy = pl.y - cosY * behind * cosPi;
+    let cz = pl.z + above + Math.sin(pl.pitch) * behind;
+    let cpitch = -0.05;
+    const minCz = terrainH(cx, cy) + 5;       // ne jamais passer sous le sol
+    if (cz < minCz) {                          // relevée : on vise l'avion pour le garder cadré
+      cz = minCz;
+      const dxy = Math.hypot(pl.x - cx, pl.y - cy) || 1e-6;
+      cpitch = Math.atan2((pl.z + 2) - cz, dxy);
+    }
+    return { cx, cy, cz, cyaw: pl.yaw, cpitch, croll: 0 };
   } else if (camMode === 2) {
     const perpX = Math.cos(pl.yaw), perpY = -Math.sin(pl.yaw);
-    return {
-      cx: pl.x + perpX * 65, cy: pl.y + perpY * 65, cz: pl.z + 8,
-      cyaw: pl.yaw - Math.PI / 2, cpitch: 0, croll: 0
-    };
+    const cx = pl.x + perpX * 65, cy = pl.y + perpY * 65;
+    let cz = pl.z + 8;
+    let cpitch = 0;
+    const minCz = terrainH(cx, cy) + 5;
+    if (cz < minCz) {
+      cz = minCz;
+      const dxy = Math.hypot(pl.x - cx, pl.y - cy) || 1e-6;
+      cpitch = Math.atan2((pl.z + 2) - cz, dxy);
+    }
+    return { cx, cy, cz, cyaw: pl.yaw - Math.PI / 2, cpitch, croll: 0 };
   } else {
     // Caméra libre : orbite autour de l'avion (contrôlée à la souris)
     const horiz = Math.cos(camOrbit.pitch) * camOrbit.dist;
     const cx = pl.x - Math.sin(camOrbit.yaw) * horiz;
     const cy = pl.y - Math.cos(camOrbit.yaw) * horiz;
-    const cz = pl.z + 3 + Math.sin(camOrbit.pitch) * camOrbit.dist;
+    let cz = pl.z + 3 + Math.sin(camOrbit.pitch) * camOrbit.dist;
+    cz = Math.max(cz, terrainH(cx, cy) + 4);   // reste au-dessus du sol
     const tx = pl.x, ty = pl.y, tz = pl.z + 3;
     const dxy = Math.sqrt((tx - cx) * (tx - cx) + (ty - cy) * (ty - cy)) || 1e-6;
     return {
@@ -65,4 +79,22 @@ function clipEdge(axw, ayw, azw, bxw, byw, bzw) {
 function getSunScreen() {
   const F = 180000;
   return project(pl.x + SUN_WX / SL * F, pl.y + SUN_WY / SL * F, pl.z + SUN_WZ / SL * F);
+}
+
+// ── Test d'occlusion par le terrain ──────────────────────
+// Vrai si un relief masque le point (tx,ty,tz) vu depuis la caméra.
+// Le rendu n'a pas de z-buffer : sans ce test, les aéroports (dessinés
+// APRÈS le terrain) se peignent « à travers » les montagnes.
+// On échantillonne le sol le long de la ligne de visée caméra→cible.
+function terrainOccluded(tx, ty, tz) {
+  const dx = tx - cam.cx, dy = ty - cam.cy, dz = tz - cam.cz;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 60) return false;                       // trop proche : rien entre nous
+  const steps = clamp(dist / 200, 6, 24) | 0;
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const gh = terrainH(cam.cx + dx * t, cam.cy + dy * t);
+    if (gh > cam.cz + dz * t + 4) return true;       // le sol dépasse la ligne de visée → caché
+  }
+  return false;
 }

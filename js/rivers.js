@@ -42,15 +42,22 @@ function drawRivers(){
       const perpX=-Math.cos(dir)*riv.width, perpY=Math.sin(dir)*riv.width;
 
       const fogF=Math.pow(Math.min(1,Math.sqrt(d2)/RIVER_RANGE),0.6);
-      // Rivière posée SUR le terrain (+0.3 pour éviter le z-fighting)
-      const wz=h+0.3;
-      const nh=terrainH(nx,ny);
-      const nwz=nh+0.3;
 
-      const p1=project(rx+perpX,ry+perpY,wz);
-      const p2=project(rx-perpX,ry-perpY,wz);
-      const p3=project(nx-perpX,ny-perpY,nwz);
-      const p4=project(nx+perpX,ny+perpY,nwz);
+      // Rivière DRAPÉE sur le terrain : chaque coin suit le sol réel à sa position
+      // (avant, les bords prenaient la hauteur de l'axe → ils flottaient en dévers).
+      const OFF=0.25;  // léger décalage anti z-fighting
+      const z1=terrainH(rx+perpX,ry+perpY)+OFF;
+      const z2=terrainH(rx-perpX,ry-perpY)+OFF;
+      const z3=terrainH(nx-perpX,ny-perpY)+OFF;
+      const z4=terrainH(nx+perpX,ny+perpY)+OFF;
+
+      // Occlusion (segments lointains seulement) : pas de rivière à travers les montagnes
+      if(d2>350*350 && terrainOccluded(rx,ry,(z1+z2)*0.5)){ rx=nx; ry=ny; continue; }
+
+      const p1=project(rx+perpX,ry+perpY,z1);
+      const p2=project(rx-perpX,ry-perpY,z2);
+      const p3=project(nx-perpX,ny-perpY,z3);
+      const p4=project(nx+perpX,ny+perpY,z4);
 
       if(p1&&p2&&p3&&p4){
         const wr=Math.round(lerp(28,FOG_R,fogF));

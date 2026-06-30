@@ -106,6 +106,8 @@ function drawAirports(){
     if(ap._gz==null) ap._gz=runwayZ(ap);
     const z=ap._gz;   // hauteur piste mise en cache (= sol physique, évite tout décalage)
 
+    if(terrainOccluded(ap.wx, ap.wy, z)) return;   // caché derrière un relief → on ne dessine pas
+
     // ── 0. JUPES LATÉRALES : comblent le vide entre piste et terrain ──
     // 4 côtés de la piste, chaque jupe descend au terrain local
     {
@@ -471,6 +473,7 @@ function drawAirportBuildings(){
     const fogF=Math.pow(Math.min(1,dc/MAX_DIST),0.6);
     if(ap._gz==null) ap._gz=runwayZ(ap);
     const z=ap._gz;
+    if(terrainOccluded(ap.wx, ap.wy, z)) return;   // caché derrière un relief
     const cx=Math.sin(ap.hdg), cy=Math.cos(ap.hdg);
     const px=-cy, py=cx;
     const hw=ap.wid/2;
