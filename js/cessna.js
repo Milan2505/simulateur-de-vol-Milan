@@ -633,9 +633,10 @@ function addElevatorSide(visible, side, defl) {
 // ── GOUVERNE DE DIRECTION (RUDDER) ──────────────────────
 // Bord de fuite de la derive, pivote en lacet (dans le plan XY)
 function addRudder(visible) {
-  // signe inversé pour que le sens du braquage corresponde au lacet réel
-  // (rudder>0 → lacet à droite → bord de fuite à droite), comme la correction des ailerons
-  const defl = -pl.rudder * 0.35;
+  // Convention physique : pl.rudder<0 = palonnier droite (touche E) → lacet à droite.
+  // Le bord de fuite de la dérive doit alors partir à DROITE (+x).
+  //   defl<0 → bord de fuite vers +x (droite) → cohérent avec un lacet à droite.
+  const defl = pl.rudder * 0.35;
   const fw = 0.16;
   const cosD = Math.cos(defl), sinD = Math.sin(defl);
 
