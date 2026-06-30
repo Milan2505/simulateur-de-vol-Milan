@@ -1,10 +1,14 @@
 {
   // ── Correcteur orthographique (cSpell) ──
-  // Le projet est en français : on active le dictionnaire FR en plus de l'EN
-  // (extension recommandée : streetsidesoftware.code-spell-checker-french)
-  // → plus d'avertissements « Unknown word » sur les libellés/commentaires FR.
+  // DÉSACTIVÉ pour ce projet : il signalait sans cesse des faux positifs sur les
+  // libellés français et surtout sur les IDENTIFIANTS DE CODE (horiz, perp, perpX…).
+  // → on le coupe pour ce dossier. Les vraies fautes ne sont donc plus détectées ;
+  //   pour le réactiver, repasse "cSpell.enabled" à true.
+  "cSpell.enabled": false,
+
+  // Config conservée au cas où tu réactives cSpell (langue FR + mots du projet) :
   "cSpell.language": "en,fr",
-  // Identifiants de code & abréviations propres au projet (non présents dans les dictionnaires)
+  "cSpell.diagnosticLevel": "Hint",
   "cSpell.words": [
     "sbox", "sval", "thr", "spd", "alt", "hdg", "cmp", "vsi", "att", "curs", "lbl",
     "cyaw", "cpitch", "croll", "fpa", "aoa", "qbar", "ctrl", "elev", "rud", "ail",
@@ -12,8 +16,7 @@
     "cessna", "skyhawk", "diedre", "palonnier", "empennage", "derive", "gouverne",
     "biome", "biomes", "terrain", "shimmer", "shadefactor", "shadecol",
     "noeuds", "decrochage", "cabrer", "piquer", "lacet", "roulis", "tangage",
-    "asphalt", "talus", "diffuse"
-  ],
-  // Laisse la vérification active mais sans bloquer (niveau information)
-  "cSpell.diagnosticLevel": "Hint"
+    "asphalt", "talus", "diffuse", "horiz", "perp", "geom", "densalt", "propeff",
+    "stallspd", "ctrleff", "gravpente", "fariz"
+  ]
 }
