@@ -309,8 +309,8 @@ const CESSNA_MESH = (() => {
     // Sauterelle
     const [xs,ysa,ysb,zts,zbs,dzs] = WP[WP.length-1];
     quad(W2,[xs,ysa,zbs+dzs],[xs,ysb,zbs+dzs],[xs,ysb,zts+dzs],[xs,ysa,zts+dzs]);
-    // Feux de bout d'aile
-    quad(s>0?'#d42020':'#20a030',
+    // Feux de bout d'aile (tribord/droite = vert, bâbord/gauche = rouge) — cohérent avec le glow nav
+    quad(s>0?'#20a030':'#d42020',
       [xs+s*.02,ysa,zbs+dzs],[xs+s*.02,ysb,zbs+dzs],
       [xs+s*.02,ysb,zts+dzs],[xs+s*.02,ysa,zts+dzs]);
   }
@@ -775,7 +775,9 @@ function drawCessna() {
     if (alpha !== undefined) ctx.globalAlpha = 1;
   });
 
-  // 5. Feux de navigation (glow)
+  // 5. Feux de navigation — petits points discrets (pas de gros halo en plein jour).
+  // Avant : un halo `sz*4` à alpha 0.35 → une « boule verte/rouge » flottante au bout d'aile.
+  // Maintenant : un point lumineux net, TAILLE PLAFONNÉE (ne grossit plus quand on est proche).
   if (CESSNA_MESH._navLights) {
     const T = performance.now() * 0.001;
     const beacon = Math.sin(T * 3.5) > 0.3 ? 1 : 0.15;
@@ -783,19 +785,20 @@ function drawCessna() {
       const pr = projP(nl.lx, nl.ly, nl.lz);
       if (!pr) return;
       const intensity = (i === 3) ? beacon : 1.0;
-      const sz = Math.max(2, 120 / pr.d);
-      const g1 = ctx.createRadialGradient(pr.sx,pr.sy,0,pr.sx,pr.sy,sz*4);
-      g1.addColorStop(0, nl.glow + (0.35*intensity) + ')');
-      g1.addColorStop(0.4, nl.glow + (0.12*intensity) + ')');
+      const sz = clamp(70 / pr.d, 1.1, 2.8);    // plafonné → jamais de grosse tache
+      // Petit halo doux et discret
+      const g1 = ctx.createRadialGradient(pr.sx, pr.sy, 0, pr.sx, pr.sy, sz * 2.2);
+      g1.addColorStop(0, nl.glow + (0.16 * intensity) + ')');
       g1.addColorStop(1, nl.glow + '0)');
       ctx.fillStyle = g1;
-      ctx.beginPath(); ctx.arc(pr.sx,pr.sy,sz*4,0,Math.PI*2); ctx.fill();
-      const g2 = ctx.createRadialGradient(pr.sx,pr.sy,0,pr.sx,pr.sy,sz);
-      g2.addColorStop(0, 'rgba(255,255,255,' + (0.95*intensity) + ')');
-      g2.addColorStop(0.5, nl.glow + (0.8*intensity) + ')');
+      ctx.beginPath(); ctx.arc(pr.sx, pr.sy, sz * 2.2, 0, Math.PI * 2); ctx.fill();
+      // Cœur net coloré
+      const g2 = ctx.createRadialGradient(pr.sx, pr.sy, 0, pr.sx, pr.sy, sz);
+      g2.addColorStop(0, 'rgba(255,255,255,' + (0.85 * intensity) + ')');
+      g2.addColorStop(0.6, nl.glow + (0.7 * intensity) + ')');
       g2.addColorStop(1, nl.glow + '0)');
       ctx.fillStyle = g2;
-      ctx.beginPath(); ctx.arc(pr.sx,pr.sy,sz,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(pr.sx, pr.sy, sz, 0, Math.PI * 2); ctx.fill();
     });
   }
 }
