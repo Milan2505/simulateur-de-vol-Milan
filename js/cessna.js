@@ -82,11 +82,11 @@ const CESSNA_MESH = (() => {
     M.push({col, v: [a, b, c]});
   }
 
-  // Couleurs
-  const W  = '#f0ede2', W2 = '#dedad0', W3 = '#c4c0b5', W4 = '#b0aca0';
+  // Couleurs — livrée blanc nacré + filet rouge (Cessna 172 « Skyhawk »)
+  const W  = '#f6f3ec', W2 = '#e4e0d6', W3 = '#cbc7bb', W4 = '#b4b0a4';
   const MT = '#6a6258', MT2 = '#48423c';
-  const GL = '#6ea4c4', GL2 = '#4d7c98';  // verre teinté foncé → vitres bien lisibles
-  const RD = '#c41818';
+  const GL = '#3f6c8f', GL2 = '#315573';  // vitrage teinté plein jour (plus profond = plus vitre)
+  const RD = '#cc1a1a';
   const GY = '#888070', GK = '#48423a';
   const TY = '#202024', HB = '#b0aaa0';  // pneu noir, moyeu métallique clair
 
@@ -244,8 +244,10 @@ const CESSNA_MESH = (() => {
   // ═══════════════════════════════════════════════════════
   {
     const vZ1=0.55, vZ2=2.05, e=0.02;   // base des vitres remontée (planche de bord)
-    // Pare-brise : de la planche de bord (y12.6, z0.9) jusqu'au toit (y9.5, z2.05)
-    quad(GL, [-1.30,12.6,0.92],[1.30,12.6,0.92],[1.60,9.5,vZ2],[-1.60,9.5,vZ2]);
+    const GLH='#6f9ec0';                 // reflet de ciel (haut du vitrage)
+    // Pare-brise : dégradé bas teinté → haut clair (reflet du ciel) = aspect verre
+    quad(GL,  [-1.30,12.6,0.92],[1.30,12.6,0.92],[1.45,11.05,1.485],[-1.45,11.05,1.485]);
+    quad(GLH, [-1.45,11.05,1.485],[1.45,11.05,1.485],[1.60,9.5,vZ2],[-1.60,9.5,vZ2]);
     // Vitres latérales (portes)
     quad(GL2,[1.70+e,9.5,vZ1],[1.70+e,9.5,vZ2],[1.68+e,-2.0,vZ2-0.05],[1.68+e,-2.0,vZ1+0.05]);
     quad(GL2,[-1.70-e,9.5,vZ1],[-1.68-e,-2.0,vZ1+0.05],[-1.68-e,-2.0,vZ2-0.05],[-1.70-e,9.5,vZ2]);

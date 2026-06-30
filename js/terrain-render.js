@@ -44,17 +44,27 @@ function drawTerrain(T) {
         // Tuile eau
         if (A.wz < 1 && B.wz < 1 && C.wz < 1 && D.wz < 1) {
           const fog = Math.pow(Math.min(1, Math.sqrt(d2) / FAR), .5);
-          let wr = 32 * (1 - fog) + FOG_R * fog;
-          let wg = 72 * (1 - fog) + FOG_G * fog;
-          let wb = 138 * (1 - fog) + FOG_B * fog;
+          // Couleur par profondeur : bleu nuit au large → turquoise près des côtes
+          const avgRaw = (A.wz + B.wz + C.wz + D.wz) * 0.25;
+          const sh = clamp(1 + avgRaw / 55, 0, 1);   // 1 = haut-fond, 0 = grand fond
+          let dr = lerp(16, 46, sh), dg = lerp(48, 120, sh), db = lerp(102, 150, sh);
+          // Houle légère (scintillement) — calme au loin pour éviter le bruit d'horizon
+          const mx = wx0 + step * .5, my = wy0 + step * .5;
+          const shimmer = (Math.sin(mx * 0.021 + my * 0.017 + T * 0.8) +
+                           Math.sin(mx * 0.053 - my * 0.041 + T * 1.3) * 0.6) * 4 * (1 - fog);
+          dr += shimmer; dg += shimmer; db += shimmer * 1.2;
+          let wr = dr * (1 - fog) + FOG_R * fog;
+          let wg = dg * (1 - fog) + FOG_G * fog;
+          let wb = db * (1 - fog) + FOG_B * fog;
           // Reflet du soleil (glitter) — normale de l'eau = (0,0,1)
           if (fog < 0.85) {
-            const mx = wx0 + step * .5, my = wy0 + step * .5;
             const vx = cam.cx - mx, vy = cam.cy - my, vz = cam.cz;
             const vl = Math.sqrt(vx*vx + vy*vy + vz*vz) || 1;
             const hx = SD.x + vx/vl, hy = SD.y + vy/vl, hz = SD.z + vz/vl;
             const hl = Math.sqrt(hx*hx + hy*hy + hz*hz) || 1;
-            const spec = Math.pow(Math.max(0, hz/hl), 38) * 100 * (1 - fog);
+            const base = Math.max(0, hz/hl);
+            // glitter étroit + voile solaire large → mer vivante sans clignoter
+            const spec = (Math.pow(base, 38) * 100 + Math.pow(base, 6) * 14) * (1 - fog);
             wr = Math.min(255, wr + spec * .95); wg = Math.min(255, wg + spec * .97); wb = Math.min(255, wb + spec);
           }
           const wcol = `rgb(${wr|0},${wg|0},${wb|0})`;

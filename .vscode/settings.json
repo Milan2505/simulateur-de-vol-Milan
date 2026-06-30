@@ -1,0 +1,19 @@
+{
+  // ── Correcteur orthographique (cSpell) ──
+  // Le projet est en français : on active le dictionnaire FR en plus de l'EN
+  // (extension recommandée : streetsidesoftware.code-spell-checker-french)
+  // → plus d'avertissements « Unknown word » sur les libellés/commentaires FR.
+  "cSpell.language": "en,fr",
+  // Identifiants de code & abréviations propres au projet (non présents dans les dictionnaires)
+  "cSpell.words": [
+    "sbox", "sval", "thr", "spd", "alt", "hdg", "cmp", "vsi", "att", "curs", "lbl",
+    "cyaw", "cpitch", "croll", "fpa", "aoa", "qbar", "ctrl", "elev", "rud", "ail",
+    "navlights", "windsock", "papi", "runway", "taxiway", "vtail", "fuselage",
+    "cessna", "skyhawk", "diedre", "palonnier", "empennage", "derive", "gouverne",
+    "biome", "biomes", "terrain", "shimmer", "shadefactor", "shadecol",
+    "noeuds", "decrochage", "cabrer", "piquer", "lacet", "roulis", "tangage",
+    "asphalt", "talus", "diffuse"
+  ],
+  // Laisse la vérification active mais sans bloquer (niveau information)
+  "cSpell.diagnosticLevel": "Hint"
+}

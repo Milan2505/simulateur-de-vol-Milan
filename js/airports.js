@@ -103,7 +103,8 @@ function drawAirports(){
     const fogF=Math.pow(Math.min(1,dc/FAR), 0.6);
     const lite=Math.max(0.55, 1-fogF*0.5);
 
-    const z=runwayZ(ap);
+    if(ap._gz==null) ap._gz=runwayZ(ap);
+    const z=ap._gz;   // hauteur piste mise en cache (= sol physique, évite tout décalage)
 
     // ── 0. JUPES LATÉRALES : comblent le vide entre piste et terrain ──
     // 4 côtés de la piste, chaque jupe descend au terrain local
@@ -271,6 +272,55 @@ function drawAirports(){
       }
     }
 
+    // ── Taxiway + tablier (côté hangars, +px) ─────────────
+    // Bande de roulage reliant la piste à l'aire de stationnement des hangars.
+    {
+      const taxV=Math.round(70*lite), taxVb=Math.round(64*lite);
+      const taxiCol=`rgb(${taxV},${taxV},${taxVb})`;
+      const lat0=hw, lat1=hw+ap.wid*1.05;
+      const al0=-ap.len*0.10, al1=ap.len*0.22;
+      drawFlatQuad(taxiCol,
+        [ap.wx+cx*al0+px*lat0, ap.wy+cy*al0+py*lat0, z],
+        [ap.wx+cx*al1+px*lat0, ap.wy+cy*al1+py*lat0, z],
+        [ap.wx+cx*al1+px*lat1, ap.wy+cy*al1+py*lat1, z],
+        [ap.wx+cx*al0+px*lat1, ap.wy+cy*al0+py*lat1, z], fogF);
+      // Ligne de guidage jaune centrale du taxiway
+      if(dc<2600){
+        const yv=Math.round(220*lite);
+        const yellow=`rgba(${yv},${Math.round(190*lite)},40,0.9)`;
+        const ylat=(lat0+lat1)/2, yw=0.5;
+        drawFlatQuad(yellow,
+          [ap.wx+cx*al0+px*(ylat-yw), ap.wy+cy*al0+py*(ylat-yw), z+0.15],
+          [ap.wx+cx*al1+px*(ylat-yw), ap.wy+cy*al1+py*(ylat-yw), z+0.15],
+          [ap.wx+cx*al1+px*(ylat+yw), ap.wy+cy*al1+py*(ylat+yw), z+0.15],
+          [ap.wx+cx*al0+px*(ylat+yw), ap.wy+cy*al0+py*(ylat+yw), z+0.15], fogF);
+      }
+    }
+
+    // ── PAPI : 4 feux d'indication de plan d'approche (à gauche de chaque seuil) ──
+    // Blanc = tu es au-dessus du plan, rouge = en dessous. 2 blancs / 2 rouges = pile sur le plan (3°).
+    if(dc<3200){
+      const papiAng=[3.5, 3.17, 2.83, 2.5];  // du plus près au plus loin de la piste
+      for(let se=-1;se<=1;se+=2){
+        const baseAlong=se*(hl-ap.len*0.08);
+        for(let u=0;u<4;u++){
+          const lat=hw+5+u*3.0;
+          const lx=ap.wx+cx*baseAlong-px*lat;   // côté gauche (vu de l'approche)
+          const ly=ap.wy+cy*baseAlong-py*lat;
+          const lpr=project(lx,ly,z+1.0);
+          if(!lpr||lpr.d>3200) continue;
+          const dxh=pl.x-lx, dyh=pl.y-ly;
+          const horiz=Math.sqrt(dxh*dxh+dyh*dyh)||1;
+          const ang=Math.atan2(pl.z-z, horiz)*180/Math.PI;
+          const isWhite=ang>=papiAng[u];
+          const rad=Math.max(1.5, 5/lpr.d*45);
+          ctx.beginPath(); ctx.arc(lpr.sx,lpr.sy,rad,0,Math.PI*2);
+          ctx.fillStyle=isWhite?`rgba(255,255,255,${0.95-fogF*.4})`:`rgba(255,45,45,${0.95-fogF*.4})`;
+          ctx.fill();
+        }
+      }
+    }
+
     if(dc>3500) return; // marquages visibles seulement de près
 
     const wz=z+0.2; // blanc légèrement au-dessus de l'asphalte
@@ -419,7 +469,8 @@ function drawAirportBuildings(){
     if(dc>MAX_DIST) return;
 
     const fogF=Math.pow(Math.min(1,dc/MAX_DIST),0.6);
-    const z=runwayZ(ap);
+    if(ap._gz==null) ap._gz=runwayZ(ap);
+    const z=ap._gz;
     const cx=Math.sin(ap.hdg), cy=Math.cos(ap.hdg);
     const px=-cy, py=cx;
     const hw=ap.wid/2;

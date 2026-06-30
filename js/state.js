@@ -15,9 +15,10 @@ const K = {};
 window.addEventListener('keydown', e => {
   K[e.code] = true;
   if (e.key) K[e.key.toLowerCase()] = true;
-  // Volets : flèche bas = sortir (+), flèche haut = rentrer (−) — un cran par appui
-  if (e.code === 'ArrowDown' && !e.repeat && started && !crashed) flaps = Math.min(3, flaps + 1);
-  if (e.code === 'ArrowUp'   && !e.repeat && started && !crashed) flaps = Math.max(0, flaps - 1);
+  // Volets : F = sortir (+), G = rentrer (−) — un cran par appui.
+  // (les flèches sont désormais dédiées au pilotage tangage/roulis)
+  if (e.code === 'KeyF' && !e.repeat && started && !crashed) flaps = Math.min(3, flaps + 1);
+  if (e.code === 'KeyG' && !e.repeat && started && !crashed) flaps = Math.max(0, flaps - 1);
 });
 window.addEventListener('keyup', e => {
   K[e.code] = false;

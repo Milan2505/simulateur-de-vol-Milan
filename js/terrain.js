@@ -2,7 +2,11 @@
 // TERRAIN.JS — Génération procédurale de terrain + biomes
 // ══════════════════════════════════════════════════════════
 
-const _tCache = new Map();
+// Cache à double tampon (hot/warm) : bien plus efficace qu'un .clear() brutal.
+// Quand le tampon chaud est plein, il devient le tampon tiède et on repart à neuf
+// → on garde toujours ~1 frame de points chauds + 1 frame de secours (taux de hit ↑↑).
+let _tHot = new Map(), _tWarm = new Map();
+const _T_BUDGET = 24000;
 
 function _terrainRaw(x, z) {
   const s = 0.00075;
@@ -46,10 +50,13 @@ function _terrainRaw(x, z) {
 
 function terrainH(x, z) {
   const ck = x + ',' + z;
-  if (_tCache.has(ck)) return _tCache.get(ck);
-  if (_tCache.size > 2048) _tCache.clear();
-  const v = _terrainRaw(x, z);
-  _tCache.set(ck, v);
+  let v = _tHot.get(ck);
+  if (v !== undefined) return v;
+  v = _tWarm.get(ck);
+  if (v !== undefined) { _tHot.set(ck, v); return v; }   // promu vers le tampon chaud
+  v = _terrainRaw(x, z);
+  if (_tHot.size >= _T_BUDGET) { _tWarm = _tHot; _tHot = new Map(); }
+  _tHot.set(ck, v);
   return v;
 }
 
@@ -73,6 +80,11 @@ function biomeColor(h, wx, wy, diffuse, fogF, T, nx, ny, nz) {
     const sand = Math.sin(wx * .18 + 1.1) * Math.cos(wy * .15 + 0.8) * 4 * (1 - fogF);
     br += sand; bg += sand * .6;
     br *= diffuse * .4 + 0.6; bg *= diffuse * .4 + 0.6; bb *= diffuse * .3 + 0.7;
+    // Écume littorale animée : crête blanche qui lèche le rivage (pic à la ligne d'eau)
+    const foam = Math.max(0, 1 - Math.abs(h - 1.3) / 1.2);
+    const lap  = 0.5 + 0.5 * Math.sin(wx * 0.08 + wy * 0.06 + T * 1.6);
+    const fw   = foam * lap * 72 * (1 - fogF);
+    br += fw; bg += fw; bb += fw * 0.92;
   } else if (h < 14) {
     const k = (h - 5) / 9;
     br = lerp(210, 182, k); bg = lerp(192, 160, k); bb = lerp(130, 104, k);
